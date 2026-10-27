@@ -20,4 +20,16 @@ enum ProjectStatus: string
     {
         return in_array($this, [self::NotStarted, self::Ongoing], true);
     }
+
+    public function label(): string
+    {
+        return match ($this) {
+            self::NotStarted => 'Not Started',
+            self::Ongoing => 'Ongoing',
+            self::Suspended => 'Suspended',
+            self::Postponed => 'Postponed',
+            self::Completed => 'Completed',
+            self::Terminated => 'Terminated',
+        };
+    }
 }

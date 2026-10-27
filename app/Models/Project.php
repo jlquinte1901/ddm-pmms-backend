@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Enums\ProjectIndicator;
 use App\Enums\ProjectStatus;
+use Carbon\CarbonImmutable;
 use Database\Factories\ProjectFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -105,5 +107,36 @@ class Project extends Model
     protected function ownedBy(Builder $query, User|int $user): Builder
     {
         return $query->where('assigned_pe_id', $user instanceof User ? $user->id : $user);
+    }
+
+    /**
+     * Apply the read-time monitoring indicator. The filter uses the stored
+     * `effective_finish_date` generated column and takes today as a bound
+     * parameter so the rule is testable and never stored.
+     */
+    #[Scope]
+    protected function indicator(Builder $query, ProjectIndicator $indicator, CarbonImmutable $today): Builder
+    {
+        $todayDate = $today->toDateString();
+        $criticalEndExclusive = $today->addDays(36)->toDateString();
+
+        return match ($indicator) {
+            ProjectIndicator::Completed => $query->where('status', ProjectStatus::Completed),
+            ProjectIndicator::Terminated => $query->where('status', ProjectStatus::Terminated),
+            ProjectIndicator::Paused => $query->whereIn('status', [
+                ProjectStatus::Suspended,
+                ProjectStatus::Postponed,
+            ]),
+            ProjectIndicator::Overdue => $query
+                ->whereIn('status', [ProjectStatus::NotStarted, ProjectStatus::Ongoing])
+                ->where('effective_finish_date', '<', $todayDate),
+            ProjectIndicator::Critical => $query
+                ->whereIn('status', [ProjectStatus::NotStarted, ProjectStatus::Ongoing])
+                ->where('effective_finish_date', '>=', $todayDate)
+                ->where('effective_finish_date', '<', $criticalEndExclusive),
+            ProjectIndicator::Normal => $query
+                ->whereIn('status', [ProjectStatus::NotStarted, ProjectStatus::Ongoing])
+                ->where('effective_finish_date', '>=', $criticalEndExclusive),
+        };
     }
 }
