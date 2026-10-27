@@ -9,6 +9,12 @@ use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\DocumentDownloadController;
 use App\Http\Controllers\DocumentDownloadRequestController;
 use App\Http\Controllers\PermissionController;
+use App\Http\Controllers\ProjectAdministerController;
+use App\Http\Controllers\ProjectCategoryController;
+use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\ProjectDashboardController;
+use App\Http\Controllers\ProjectLifecycleController;
+use App\Http\Controllers\ProjectReportController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\RolePermissionController;
 use App\Http\Controllers\UserController;
@@ -16,6 +22,8 @@ use App\Http\Controllers\UserPermissionController;
 use App\Models\Document;
 use App\Models\DocumentCategory;
 use App\Models\DocumentDownloadRequest;
+use App\Models\Project;
+use App\Models\ProjectCategory;
 use Illuminate\Support\Facades\Route;
 
 Route::bind('ddmCategory', function (string $value): DocumentCategory {
@@ -44,6 +52,18 @@ Route::bind('ddmDownloadRequest', function (string $value): DocumentDownloadRequ
         ->whereKey($value)
         ->whereHas('document', fn ($query) => $query->withoutProject())
         ->firstOrFail();
+});
+
+Route::bind('pmmsCategory', function (string $value): ProjectCategory {
+    return ProjectCategory::query()->whereKey($value)->firstOrFail();
+});
+
+Route::bind('pmmsProject', function (string $value): Project {
+    return Project::query()->whereKey($value)->firstOrFail();
+});
+
+Route::bind('pmmsDeletedProject', function (string $value): Project {
+    return Project::withTrashed()->whereKey($value)->firstOrFail();
 });
 
 Route::prefix('v1')->group(function (): void {
@@ -128,6 +148,86 @@ Route::prefix('v1')->group(function (): void {
                     ->name('ddm.documents.destroy');
                 Route::post('documents/{ddmDeletedDocument}/restore', [DocumentController::class, 'restore'])
                     ->name('ddm.documents.restore');
+            });
+        });
+
+        Route::prefix('pmms')->group(function (): void {
+            Route::middleware('permission:'.implode(',', [
+                PermissionName::PmmsProjectsViewAll->value,
+                PermissionName::PmmsProjectsViewOwn->value,
+            ]))->group(function (): void {
+                Route::get('categories', [ProjectCategoryController::class, 'index'])
+                    ->name('pmms.categories.index');
+                Route::get('categories/{pmmsCategory}', [ProjectCategoryController::class, 'show'])
+                    ->name('pmms.categories.show');
+                Route::get('projects', [ProjectController::class, 'index'])
+                    ->name('pmms.projects.index');
+                Route::get('projects/{pmmsProject}', [ProjectController::class, 'show'])
+                    ->name('pmms.projects.show');
+                Route::get('projects/{pmmsProject}/history', [ProjectController::class, 'history'])
+                    ->name('pmms.projects.history');
+                Route::get('projects/{pmmsProject}/updates', [ProjectController::class, 'updates'])
+                    ->name('pmms.projects.updates');
+            });
+
+            Route::middleware('permission:'.PermissionName::PmmsCategoriesManage->value)->group(function (): void {
+                Route::post('categories', [ProjectCategoryController::class, 'store'])
+                    ->name('pmms.categories.store');
+                Route::match(['put', 'patch'], 'categories/{pmmsCategory}', [ProjectCategoryController::class, 'update'])
+                    ->name('pmms.categories.update');
+            });
+
+            Route::middleware('permission:'.PermissionName::PmmsProjectsCreate->value)->group(function (): void {
+                Route::post('projects', [ProjectController::class, 'store'])
+                    ->name('pmms.projects.store');
+            });
+
+            Route::middleware('permission:'.PermissionName::PmmsProjectsManageOwn->value)->group(function (): void {
+                Route::match(['put', 'patch'], 'projects/{pmmsProject}', [ProjectController::class, 'update'])
+                    ->name('pmms.projects.update');
+                Route::post('projects/{pmmsProject}/start', [ProjectLifecycleController::class, 'start'])
+                    ->name('pmms.projects.start');
+                Route::post('projects/{pmmsProject}/progress', [ProjectLifecycleController::class, 'progress'])
+                    ->name('pmms.projects.progress');
+                Route::post('projects/{pmmsProject}/pause', [ProjectLifecycleController::class, 'pause'])
+                    ->name('pmms.projects.pause');
+                Route::post('projects/{pmmsProject}/resume', [ProjectLifecycleController::class, 'resume'])
+                    ->name('pmms.projects.resume');
+            });
+
+            Route::middleware('permission:'.PermissionName::PmmsProjectsAdminister->value)->group(function (): void {
+                Route::post('projects/{pmmsProject}/terminate', [ProjectAdministerController::class, 'terminate'])
+                    ->name('pmms.projects.terminate');
+                Route::post('projects/{pmmsProject}/reopen', [ProjectAdministerController::class, 'reopen'])
+                    ->name('pmms.projects.reopen');
+                Route::post('projects/{pmmsProject}/reassign', [ProjectAdministerController::class, 'reassign'])
+                    ->name('pmms.projects.reassign');
+                Route::delete('projects/{pmmsProject}', [ProjectAdministerController::class, 'destroy'])
+                    ->name('pmms.projects.destroy');
+                Route::post('projects/{pmmsDeletedProject}/restore', [ProjectAdministerController::class, 'restore'])
+                    ->name('pmms.projects.restore');
+            });
+
+            Route::middleware([
+                'permission:'.PermissionName::PmmsDashboardView->value,
+                'permission:'.implode(',', [
+                    PermissionName::PmmsProjectsViewAll->value,
+                    PermissionName::PmmsProjectsViewOwn->value,
+                ]),
+            ])->get('dashboard', ProjectDashboardController::class)
+                ->name('pmms.dashboard');
+
+            Route::middleware([
+                'permission:'.PermissionName::PmmsReportsView->value,
+                'permission:'.implode(',', [
+                    PermissionName::PmmsProjectsViewAll->value,
+                    PermissionName::PmmsProjectsViewOwn->value,
+                ]),
+            ])->group(function (): void {
+                Route::get('reports/projects', [ProjectReportController::class, 'index'])
+                    ->name('pmms.reports.projects');
+                Route::get('reports/projects/export', [ProjectReportController::class, 'export'])
+                    ->name('pmms.reports.projects.export');
             });
         });
 
