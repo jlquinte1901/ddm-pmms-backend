@@ -4,9 +4,9 @@ namespace Database\Seeders;
 
 use App\Enums\PermissionName;
 use App\Enums\RoleName;
-use App\Models\Permission;
-use App\Models\Role;
 use Illuminate\Database\Seeder;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 class RolePermissionSeeder extends Seeder
 {
@@ -16,8 +16,9 @@ class RolePermissionSeeder extends Seeder
      */
     public function run(): void
     {
+        $guard = config('auth.defaults.guard', 'web');
         foreach (RoleName::cases() as $roleName) {
-            $role = Role::query()->where('name', $roleName->value)->first();
+            $role = Role::query()->where('name', $roleName->value)->where('guard_name', $guard)->first();
 
             if ($role === null) {
                 continue;
@@ -29,11 +30,12 @@ class RolePermissionSeeder extends Seeder
             );
 
             $permissionIds = Permission::query()
+                ->where('guard_name', $guard)
                 ->whereIn('name', $permissionNames)
                 ->pluck('id')
                 ->all();
 
-            $role->permissions()->syncWithoutDetaching($permissionIds);
+            $role->syncPermissions($permissionIds);
         }
     }
 
@@ -52,12 +54,16 @@ class RolePermissionSeeder extends Seeder
                 PermissionName::DdmDocumentsArchive,
                 PermissionName::DdmDocumentsDelete,
                 PermissionName::DdmDownloadsRequest,
+                PermissionName::DdmDownloadsDirect,
                 PermissionName::DdmDownloadsApproveRestricted,
                 PermissionName::DdmDownloadsApproveConfidential,
                 PermissionName::DdmCategoriesManage,
                 PermissionName::DdmReportsView,
                 PermissionName::PmmsCategoriesManage,
                 PermissionName::PmmsProjectsViewAll,
+                PermissionName::PmmsProjectsViewOwn,
+                PermissionName::PmmsProjectsCreate,
+                PermissionName::PmmsProjectsManageOwn,
                 PermissionName::PmmsProjectsAdminister,
                 PermissionName::PmmsDashboardView,
                 PermissionName::PmmsReportsView,
@@ -66,8 +72,10 @@ class RolePermissionSeeder extends Seeder
                 PermissionName::DdmDocumentsView,
                 PermissionName::DdmDocumentsUpload,
                 PermissionName::DdmDocumentsArchive,
+                PermissionName::DdmDocumentsDelete,
                 PermissionName::DdmDownloadsRequest,
                 PermissionName::DdmDownloadsApproveRestricted,
+                PermissionName::DdmDownloadsApproveConfidential,
                 PermissionName::DdmCategoriesManage,
                 PermissionName::DdmReportsView,
                 PermissionName::PmmsCategoriesManage,
@@ -83,7 +91,6 @@ class RolePermissionSeeder extends Seeder
                 PermissionName::PmmsProjectsCreate,
                 PermissionName::PmmsProjectsManageOwn,
                 PermissionName::PmmsDashboardView,
-                PermissionName::PmmsReportsView,
             ],
             RoleName::Viewer => [],
         };

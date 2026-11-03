@@ -22,7 +22,7 @@ class DocumentCategoryFactory extends Factory
         return [
             'name' => fake()->unique()->words(2, true),
             'scope' => DocumentCategoryScope::Ddm,
-            'default_access_level' => DocumentAccessLevel::Open,
+            'default_access_level' => DocumentAccessLevel::Restricted,
             'is_active' => true,
         ];
     }

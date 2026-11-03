@@ -6,7 +6,7 @@ This document is the persistent project context and implementation standard for 
 
 Read this file before planning or changing backend code. Do not require the user to repeat the project background, business rules, architecture, security model, or coding expectations in every prompt.
 
-This guide reflects the decisions confirmed in the **DDM-PMMS Backend Design Document** (database design, API plan, business flows, security rules, and roadmap). If this file and the design document ever disagree, stop and ask the user which one is current. Section 16 lists decisions that are still awaiting confirmation; do not treat them as settled.
+This guide reflects the decisions confirmed in the **DDM-PMMS Backend Design Document** (database design, API plan, business flows, security rules, and roadmap). If this file and the design document ever disagree, stop and ask the user which one is current. The design document has not yet been updated for decisions 6, 8, 14, 15, 19, and 20 (Spatie, the non-unique contract number, planned-date correction, upload types, and token storage). This guide is current for those. Section 16 lists all 20 decisions, which are final and approved.
 
 This is a project-specific guide. Follow the Laravel project's installed agent skills and rules as additional technical guidance. Do not assume every available package or technology must be implemented merely because it appears in the wider technology plan.
 
@@ -70,7 +70,7 @@ The intended backend direction is:
 - REST API architecture, versioned under `/api/v1`
 - Laravel Sanctum token-based API authentication, with token expiry
 - MySQL (InnoDB, `utf8mb4`)
-- Roles and permissions stored in relational tables (see section 5 for the Spatie question)
+- Spatie Laravel Permission for roles and permissions (confirmed, decision 14). Check the installed version, and its compatibility with Laravel 13, before relying on its API or installing it.
 - Laravel Storage for managed files, on a private disk
 - Pest for backend unit and feature tests
 - Postman for manual and API collection testing
@@ -92,7 +92,7 @@ Use backend authorization as the source of truth. Frontend hiding is not securit
 
 ### Permission model
 
-Permissions are named `module.resource.action`. The effective permissions of a user are the role's permissions plus any per-user grants. Grants only add access. There is no blanket Super Admin bypass: every ability is an explicit permission.
+Permissions are named `module.resource.action` and are managed with Spatie Laravel Permission (decision 14). The effective permissions of a user are the role's permissions plus any per-user direct permissions. Direct permissions only add access. One role per user is enforced by the application. Spatie caches permission lookups, so change roles and permissions only through its API, which resets the cache. There is no blanket Super Admin bypass: every ability is an explicit permission, so do not add a global `Gate::before` bypass for Super Admin.
 
 | Permission | Super Admin | Admin | PE | Viewer |
 | --- | --- | --- | --- | --- |
@@ -101,9 +101,10 @@ Permissions are named `module.resource.action`. The effective permissions of a u
 | `ddm.documents.upload` (create, new version, edit metadata) | Yes | Yes | No | No |
 | `ddm.documents.archive` (archive and restore) | Yes | Yes | No | No |
 | `ddm.documents.delete` (soft-delete and undelete) | Yes | No | No | No |
-| `ddm.downloads.request` | Yes | Yes | Yes | Grant |
+| `ddm.downloads.request` | No (downloads directly) | Yes | Yes | Grant |
 | `ddm.downloads.approve-restricted` | Yes | Yes | No | No |
 | `ddm.downloads.approve-confidential` | Yes | No | No | No |
+| `ddm.downloads.direct` | Yes | No | No | No |
 | `ddm.categories.manage`, `pmms.categories.manage` | Yes | Yes | No | No |
 | `ddm.reports.view` | Yes | Yes | No | Grant |
 | `pmms.projects.view-all` | Yes | Yes | No | Grant |
@@ -112,7 +113,7 @@ Permissions are named `module.resource.action`. The effective permissions of a u
 | `pmms.projects.administer` | Yes | Yes | No | No |
 | `pmms.dashboard.view`, `pmms.reports.view` | Yes | Yes | Own scope | Grant |
 
-`pmms.projects.administer` covers only four actions: terminate, reopen, reassign the PE, and soft-delete or restore a project. Admin and Super Admin cannot otherwise edit project data. Every one of those actions requires a reason.
+`pmms.projects.administer` covers only five actions: terminate, reopen, reassign the PE, soft-delete or restore a project, and correct a planned date after the project has started. Admin and Super Admin cannot otherwise edit project data. Every one of those actions requires a reason.
 
 ### Mandatory PMMS ownership rules
 
@@ -133,7 +134,7 @@ Design the database before implementing complex endpoints. Inspect existing migr
 
 General rules:
 
-- Use relational integrity with foreign keys. Use `RESTRICT` on delete, except cascade on the two permission pivot tables. Users, documents, and projects are deactivated or soft-deleted, never hard-deleted.
+- Use relational integrity with foreign keys. Use `RESTRICT` on delete, except the permission pivot tables, which follow Spatie's defaults. Users, documents, and projects are deactivated or soft-deleted, never hard-deleted.
 - Use snake_case names and unsigned `bigint` primary and foreign keys everywhere. Do not mix string and integer ids.
 - Add indexes for common filters, joins, ownership checks, dates, statuses, and searchable metadata, including `FULLTEXT` where search needs it.
 - Use transactions for operations that must succeed or fail together.
@@ -146,21 +147,21 @@ General rules:
 - Avoid circular foreign keys. Document the current version through `documents.latest_version_number`, not a `current_version_id`.
 - Document important constraints and assumptions.
 
-### Database schema (15 tables): critical
+### Database schema: critical
 
 **The schema is the foundation of this project and the most important part of this guide.** Every endpoint, permission, report, history record, and test depends on it, and mistakes become expensive to undo once real department data exists. Treat it with the highest care.
 
-**Status:** the business rules behind the schema are confirmed. The table structure is the proposed design from the Backend Design Document. Five structural choices are still awaiting the user's explicit approval (listed below and in section 16, decisions 15 to 19).
+**Status:** final and approved. Every decision behind the schema was answered by the user (section 16, decisions 1 to 20), including permissions through Spatie Laravel Permission, a non-unique `contract_number`, `project_categories`, `document_categories.scope`, and `latest_version_number`. Any change to it still needs the user's explicit approval.
 
 Rules for the agent:
 
 - Do not create, rename, drop, retype, or reorder any table, column, index, constraint, or foreign key without the user's explicit approval.
-- Do not write any migration until: (1) the repository has been inspected for existing tables and models, (2) decisions 14 to 19 in section 16 are answered, and (3) you have presented the migration plan and the user has approved it.
+- Do not write any migration until: (1) the repository has been inspected for existing tables and models, (2) the repository assessment in decision 13 is done, and (3) you have presented the migration plan and the user has approved it.
 - If a requirement seems to need a schema change, stop and explain. Never adjust the schema silently to make code or a test pass.
 - Never edit a migration that has already been run. Schema changes after approval go in a new migration.
 - Report any difference between the repository and this schema before building on it.
 
-#### Confirmed versus pending
+#### Confirmed decisions
 
 | Item | Status |
 | --- | --- |
@@ -169,21 +170,22 @@ Rules for the agent:
 | Planned, revised, and actual dates; `revised_finish_date` set when resuming | Confirmed |
 | Status set, `paused_since`, `completed_at`; completion at 100% by the PE | Confirmed |
 | Admin runs DDM; only Super Admin soft-deletes documents | Confirmed |
-| Open, restricted, and confidential download levels with `document_download_requests` | Confirmed |
+| Restricted and confidential download levels (no open level) with `document_download_requests` | Confirmed |
 | Narrow `pmms.projects.administer` permission | Confirmed |
-| `contract_number` unique and nullable | **Pending** (decision 15) |
-| `project_categories` as a lookup table (`fund_source` and `contractor` stay plain text) | **Pending** (decision 16) |
-| `document_categories.scope` (separate DDM and project category lists) | **Pending** (decision 17) |
-| `documents.latest_version_number` instead of a `current_version_id` | **Pending** (decision 18) |
-| `permission_user` per-user grants (needed for Viewer module access) | **Pending** (decision 19) |
+| `contract_number` nullable with a plain index, not unique (blank and repeated numbers from the paper forms are allowed) | Confirmed (decision 15) |
+| Roles and permissions through Spatie Laravel Permission (its own tables, no `users.role_id`, one role per user in the application, per-user direct permissions for Viewers) | Confirmed (decision 14) |
+| A wrong planned date after the project has started is corrected only by Admin or Super Admin, with a reason | Confirmed (decision 6) |
+| `project_categories` as a lookup table (`fund_source` and `contractor` stay plain text) | Confirmed (decision 16) |
+| `document_categories.scope` (separate DDM and project category lists) | Confirmed (decision 17) |
+| `documents.latest_version_number` instead of a `current_version_id` | Confirmed (decision 18) |
 
-#### The 15 tables
+#### The tables
 
-- **Shared Core:** `users` (with `role_id`, `is_active`, soft deletes), `roles` (four seeded roles), `permissions`, `permission_role`, `permission_user` (grant-only), `audit_logs`, and Sanctum's `personal_access_tokens`.
+- **Shared Core:** `users` (with `is_active` and soft deletes, and no `role_id` column because the role comes from Spatie), `audit_logs`, Sanctum's `personal_access_tokens`, and Spatie Laravel Permission's own tables for roles, permissions, and their assignments. Exact table and column names come from the installed version's published migrations. Four roles are seeded.
 - **DDM:** `document_categories` (with `scope` of ddm or pmms and a `default_access_level`), `documents`, `document_versions`, `document_download_requests`.
 - **PMMS:** `project_categories`, `projects`, `project_updates`, `project_history`.
 
-Key `projects` fields: `project_category_id`, `assigned_pe_id`, `created_by`, `implementation_year`, `project_name`, `contract_number` (unique, nullable, pending), `location`, `region`, `lgu`, `department`, `implementing_office`, `project_manager`, `fund_source`, `contract_amount`, `revised_amount`, `planned_start_date`, `planned_finish_date`, `revised_finish_date`, `effective_finish_date` (stored generated column: `COALESCE(revised_finish_date, planned_finish_date)`), `actual_start_date`, `actual_finish_date`, `contractor`, `status`, `progress_percentage`, `paused_since`, `completed_at`, `remarks`, soft delete. The region, LGU, department, and implementing office fields come from the actual paper project forms and stay.
+Key `projects` fields: `project_category_id`, `assigned_pe_id`, `created_by`, `implementation_year`, `project_name`, `contract_number` (nullable, plain index, not unique), `location`, `region`, `lgu`, `department`, `implementing_office`, `project_manager`, `fund_source`, `contract_amount`, `revised_amount`, `planned_start_date`, `planned_finish_date`, `revised_finish_date`, `effective_finish_date` (stored generated column: `COALESCE(revised_finish_date, planned_finish_date)`), `actual_start_date`, `actual_finish_date`, `contractor`, `status`, `progress_percentage`, `paused_since`, `completed_at`, `remarks`, soft delete. The region, LGU, department, and implementing office fields come from the actual paper project forms and stay.
 
 The full column list, types, keys, nullability, and indexes for every table are in section C (data dictionary) of the Backend Design Document. Use that as the source for migrations, not this summary.
 
@@ -195,7 +197,7 @@ The full column list, types, keys, nullability, and indexes for every table are 
 - `planned_finish_date` is never overwritten after the project starts. A new deadline goes in `revised_finish_date`.
 - `document_versions`, `audit_logs`, and `project_history` are append-only and have no soft deletes.
 - Money is `decimal(15,2)`. Progress is `tinyint unsigned` with a 0 to 100 check.
-- Foreign keys use `RESTRICT` on delete, except cascade on the two permission pivot tables. Users, documents, and projects are never hard-deleted.
+- Foreign keys use `RESTRICT` on delete, except the permission pivot tables, which follow Spatie's defaults. Users, documents, and projects are never hard-deleted.
 - No circular foreign keys between `documents` and `document_versions`.
 
 Optional future tables, not to be created without approval: `document_types`, `contractors`, `fund_sources`, `saved_reports`, `project_assignments`, `project_phases`.
@@ -241,11 +243,11 @@ Optional future tables, not to be created without approval: `document_types`, `c
 
 ### 7.5 Download access levels and requests
 
-Every category has a `default_access_level`, and a document may override it with `access_level`. The effective level is `open`, `restricted`, or `confidential`.
+Every category has a `default_access_level`, and a document may override it with `access_level`. The effective level is `restricted` or `confidential`. There is no open level, because every DDM and project document is treated as sensitive. The default for a new category is `restricted`.
 
-- **Open:** any user with `ddm.documents.view` may download. The download is audit-logged.
 - **Restricted:** needs an approved, unexpired request, decided by any Admin.
 - **Confidential:** needs an approved, unexpired request, decided by Super Admin only.
+- **Direct downloads (no request):** only two cases. Super Admin (`ddm.downloads.direct`) downloads any document directly, and the owning PE downloads documents of his own projects directly. Both are audit-logged. Admin, PEs on documents that are not their own, and Viewers always need an approved request. Being able to view a document never allows downloading it.
 - Nobody approves their own request. A requester has at most one pending request per document.
 - An approval is valid until `expires_at` (proposed 7 days by default, 30 at most). "Expired" is derived from `expires_at`, not stored.
 - Requests, decisions, and downloads are all audited.
@@ -259,7 +261,7 @@ The project record includes: category, implementation year, project name, contra
 
 Use the approved field names from the design document. Validate date order (planned finish not before planned start), numeric ranges, required fields, and status-specific requirements. Durations are calendar days.
 
-Planned dates can be edited only while the project is `not_started`. After that, the planned finish date is never overwritten, and a new deadline is expressed through `revised_finish_date`. How an entry error is corrected after a project starts is an open decision (section 16).
+Planned dates can be edited only while the project is `not_started`. After that, the planned finish date is never overwritten, and a new deadline is expressed through `revised_finish_date`. A wrong planned date after the project has started is corrected only by Admin or Super Admin, through a dedicated correction action under `pmms.projects.administer`, with a required reason. It covers `planned_start_date` and `planned_finish_date` and is written to history and audit. The PE cannot edit planned dates once the project leaves `not_started`.
 
 ### 8.2 Status definitions
 
@@ -291,7 +293,7 @@ Pause: the PE suspends or postpones a project from `not_started` or `ongoing`, w
 
 Resume (option A): from `suspended` or `postponed` only. The PE must enter a `revised_finish_date` (not before today) and a remark. The status becomes `ongoing`, `paused_since` is cleared, and the original `planned_finish_date` is untouched.
 
-Administer actions (`pmms.projects.administer`, Admin and Super Admin): terminate, reopen a completed or terminated project (with a progress value below 100), reassign the PE, soft-delete, and restore. Each needs a reason and writes history and audit rows.
+Administer actions (`pmms.projects.administer`, Admin and Super Admin): terminate, reopen a completed or terminated project (with a progress value below 100), reassign the PE, soft-delete, restore, and correct a planned date after the project has started. Each needs a reason and writes history and audit rows.
 
 ### 8.4 Project history versus audit trail
 
@@ -372,7 +374,7 @@ Do not create unnecessary abstraction layers for trivial CRUD. Prefer straightfo
 ## 11. Validation, Security, and Error Handling
 
 - Validate file type, size, required metadata, and allowed categories. Use allow-lists.
-- Proposed upload limits: PDF, Word, Excel, PowerPoint, JPEG, and PNG, up to 50 MB (see section 16). Detect the MIME type from the file content, require it to agree with the extension, and ignore the client-sent type. Align the PHP and web server body limits.
+- Upload types and limit (confirmed): PDF, Word, Excel, PowerPoint, JPEG, and PNG, up to 50 MB. Engineering plans are uploaded as PDF, so DWG and other CAD formats are rejected. Detect the MIME type from the file content, require it to agree with the extension, and ignore the client-sent type. Align the PHP and web server body limits.
 - Store files on a private disk with no public URL or symlink, under random generated paths. Keep the user's filename only in `original_name`, sanitized.
 - Never construct storage paths from untrusted input.
 - Prevent mass assignment of ownership, role, or privileged fields.
@@ -453,7 +455,7 @@ For each backend task:
 1. Read this file and the relevant installed agent skill and rule files.
 2. Inspect existing implementation before editing, including existing migrations and models, so no table is duplicated.
 3. Identify the affected domain: Shared Core, DDM, or PMMS.
-4. Check section 16. If the task depends on a pending decision, state the assumption and ask before making a risky or hard-to-reverse choice, especially before writing migrations.
+4. Check section 16. All decisions there are final. If a task conflicts with one, or needs something it does not cover, state the assumption and ask before making a risky or hard-to-reverse choice, especially before writing migrations.
 5. Plan the smallest coherent change.
 6. Implement using existing project conventions.
 7. Add or update migrations, validation, authorization, and tests as needed.
@@ -491,28 +493,29 @@ Phases 4 and 5 are independent once phases 2 and 3 are done. The history recorde
 - Do not add optional technologies or features without a requirement.
 - Favor correctness, maintainability, clarity, security, and testability over unnecessary complexity.
 
-## 16. Decisions Still Awaiting Confirmation
+## 16. Approved Decisions (Final)
 
-These are proposals from the design document that the user has not yet confirmed. Do not treat them as settled. Ask, or follow the proposal only after the user approves it.
+All 20 decisions were answered by the user: decisions 6, 8, 14, 15, and 19 on 2026-10-27, and decisions 1 to 5, 7, 9 to 13, 16 to 18, and 20 on 2026-10-28. They are final and approved. Do not reopen or change them without the user's explicit approval. Migrations may be written only after the repository assessment in decision 13 is done and the user has approved the migration plan.
 
-| # | Decision | Proposal |
+| # | Decision | Final answer |
 | --- | --- | --- |
-| 1 | Who downloads directly | Super Admin downloads every level. Admin downloads open and restricted. Everyone else downloads open only and needs an approved request for the rest. |
-| 2 | Viewer module access | The Viewer role has no permissions by itself. Super Admin grants DDM, PMMS, or both per user. |
-| 3 | Project supporting documents | Same access levels. The owning PE always downloads them and can archive and restore them. Only Super Admin soft-deletes. |
-| 4 | Reopening a Terminated project | Allowed under `pmms.projects.administer`, like reopening a Completed one. |
-| 5 | First progress report on a `not_started` project | The project becomes `ongoing` automatically. The explicit start action also exists. |
-| 6 | Correcting a wrong planned date after the project has started | Planned dates are locked once the project leaves `not_started`. Choose between an Admin correction action with a reason or a PE edit with a reason. |
-| 7 | Request timing | Approvals last 7 days by default and 30 at most. Pending requests lapse after 14 days. |
-| 8 | Upload types and size | PDF, Word, Excel, PowerPoint, JPEG, PNG, up to 50 MB. Ask whether plans such as DWG are needed. |
-| 9 | Retention | Retention periods for audit rows, project history, soft-deleted documents, and backups, plus recovery targets. No hard-delete endpoint until set. |
-| 10 | Report exports | CSV only. Excel or PDF would add a dependency. |
-| 11 | Sessions and passwords | Token expiry 8 hours, password minimum 12 characters, lockout through throttling. |
-| 12 | Starter lookup values | The department supplies the real project categories, fund sources, and document categories with their access levels. |
-| 13 | Repository conventions | Reconcile names, folders, and testing conventions with the actual repository, `AGENTS.md`, and backend guide before writing code. |
-| 14 | Permission package | The design uses its own `roles`, `permissions`, `permission_role`, and `permission_user` tables with one role per user. The earlier version of this guide named Spatie Laravel Permission. If Spatie is already installed, map the same permission names and rules onto it. Otherwise confirm which approach to use before migrations. |
-| 15 | `projects.contract_number` unique | Unique and nullable. Drop the unique constraint if the paper forms have blank or repeated contract numbers. |
+| 1 | Who downloads directly | Every document is sensitive, so there is no open level. Only two levels exist: restricted (the default) and confidential. Every download needs an approved, unexpired request, with two exceptions: Super Admin downloads directly, and the owning PE downloads documents of his own projects directly. Both are audit-logged. Admin, Viewers, and other PEs always request. Admin approves restricted requests, Super Admin approves confidential ones, and nobody approves their own. |
+| 2 | Viewer module access | The Viewer role has no permissions by itself. Super Admin grants DDM, PMMS, or both per user through Spatie direct permissions. |
+| 3 | Project supporting documents | They use the same two levels and the same request rule. The owning PE downloads documents of his own projects directly (audit-logged) and can archive and restore them. Everyone else, including Admin, needs an approved request. Only Super Admin soft-deletes. |
+| 4 | Reopening a Terminated project | Allowed for Admin and Super Admin under `pmms.projects.administer`, like reopening a Completed project, with a reason. |
+| 5 | First progress report on a `not_started` project | The project becomes `ongoing` automatically. The explicit Start action also exists. |
+| 6 | Wrong planned date after the project has started | Admin or Super Admin corrects it through a dedicated correction action under `pmms.projects.administer`, with a required reason, written to history and audit. PEs cannot edit planned dates after the project leaves `not_started`. |
+| 7 | Download request timing | Approvals last 7 days by default and 30 days at most. Pending requests lapse after 14 days. |
+| 8 | Upload types and size | PDF, Word, Excel, PowerPoint, JPEG, and PNG, up to 50 MB. Engineering plans are uploaded as PDF. DWG and other CAD formats are not accepted. |
+| 9 | Retention | Keep all records for now. No hard-delete or purge endpoint exists until the department sets retention periods (audit rows, project history, soft-deleted documents, backups) and recovery targets. |
+| 10 | Report exports | CSV only. Excel and PDF would need an extra package and a new approval. |
+| 11 | Sessions and passwords | Token expiry 8 hours, password minimum 12 characters, and lockout through login throttling. |
+| 12 | Starter lookup values | The department supplies the real project categories, fund sources, and document categories, with each category's default access level, before the database is seeded. Use clearly marked placeholders in development only. |
+| 13 | Repository conventions | Before any code or migration, inspect the real repository, `AGENTS.md`, and this guide, and reconcile names, folders, and testing conventions. Then present the migration plan for approval. |
+| 14 | Permission package | Spatie Laravel Permission. Its own tables replace custom permission tables, `users.role_id` is not used, and one role per user is enforced by the application. Verify the installed version and Laravel 13 compatibility before relying on its API. |
+| 15 | `projects.contract_number` | Nullable with a plain index, not unique. Blank and repeated contract numbers from the paper forms are allowed. |
 | 16 | `project_categories` lookup table | A lookup table so reports group cleanly. `fund_source` and `contractor` stay plain text for now. |
 | 17 | `document_categories.scope` | A `scope` of ddm or pmms keeps DDM and project document categories in separate lists. |
 | 18 | `documents.latest_version_number` | The current version is the row matching this number, instead of a `current_version_id`, to avoid a circular relationship. |
-| 19 | `permission_user` per-user grants | Grant-only table used to give Viewers DDM, PMMS, or both. Without it, Viewer access would need extra roles. |
+| 19 | `permission_user` per-user grants | Superseded by decision 14. Viewer module access uses Spatie's direct (per-user) permissions. No `permission_user` table is created. |
+| 20 | Client-side token storage | The user asked for the strongest choice within the confirmed token design. The frontend keeps the Sanctum token in `sessionStorage`. It survives a page refresh, is cleared when the tab closes, is cleared on logout and on any `401`, and is never logged or placed in a URL. Memory-only is stricter but logs the user out on every refresh. `localStorage` keeps the token too long. A stronger alternative, Sanctum's cookie-based SPA authentication (an HttpOnly cookie that scripts cannot read), would replace the token design and has not been adopted. Raise it only if the user wants to revisit the design. |

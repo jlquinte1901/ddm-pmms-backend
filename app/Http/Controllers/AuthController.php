@@ -23,7 +23,7 @@ final class AuthController extends Controller
             $request->input('device_name'),
         );
 
-        $user = $result['user']->load('role');
+        $user = $result['user']->load('roles');
         $user->setRelation('effectivePermissions', $authorization->permissionsFor($user));
 
         return response()->json([
@@ -43,7 +43,7 @@ final class AuthController extends Controller
 
     public function me(Request $request, AuthorizationService $authorization): UserResource
     {
-        $user = $request->user()->load('role');
+        $user = $request->user()->load('roles');
         $user->setRelation('effectivePermissions', $authorization->permissionsFor($user));
 
         return new UserResource($user);

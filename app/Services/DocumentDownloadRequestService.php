@@ -34,10 +34,6 @@ final class DocumentDownloadRequestService
 
             $accessLevel = $document->effectiveAccessLevel();
 
-            if ($accessLevel === DocumentAccessLevel::Open) {
-                throw new StateConflictException('Open documents can be downloaded directly without a request.');
-            }
-
             if ($this->access->canDownload($requester, $document)) {
                 throw new StateConflictException('This document is already available to download.');
             }
@@ -274,10 +270,6 @@ final class DocumentDownloadRequestService
 
         $accessLevel = $document->effectiveAccessLevel();
 
-        if ($accessLevel === DocumentAccessLevel::Open) {
-            throw new StateConflictException('The document no longer requires a download request.');
-        }
-
         if ($downloadRequest->requested_by === $approver->getKey()) {
             throw new AuthorizationException('You cannot decide your own download request.');
         }
@@ -285,7 +277,6 @@ final class DocumentDownloadRequestService
         $permission = match ($accessLevel) {
             DocumentAccessLevel::Restricted => PermissionName::DdmDownloadsApproveRestricted,
             DocumentAccessLevel::Confidential => PermissionName::DdmDownloadsApproveConfidential,
-            DocumentAccessLevel::Open => null,
         };
 
         if ($permission === null || ! $this->authorization->hasPermission($approver, $permission)) {

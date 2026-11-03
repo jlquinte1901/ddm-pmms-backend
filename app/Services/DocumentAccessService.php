@@ -26,10 +26,13 @@ final class DocumentAccessService
             return false;
         }
 
+        if ($this->authorization->hasPermission($user, PermissionName::DdmDownloadsDirect)) {
+            return true;
+        }
+
         $accessLevel = $document->effectiveAccessLevel();
 
         return match ($accessLevel) {
-            DocumentAccessLevel::Open => true,
             DocumentAccessLevel::Restricted => $this->authorization->hasPermission($user, PermissionName::DdmDownloadsApproveRestricted)
                 || $this->hasApprovedRequest($user, $document, $approvedDocumentIds),
             DocumentAccessLevel::Confidential => $this->authorization->hasPermission($user, PermissionName::DdmDownloadsApproveConfidential)

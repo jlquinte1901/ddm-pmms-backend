@@ -3,10 +3,9 @@
 namespace App\Services;
 
 use App\Enums\PermissionName;
-use App\Models\Permission;
 use App\Models\User;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Spatie\Permission\Models\Permission;
 
 /**
  * Resolves a user's effective permissions from the database on every call.
@@ -19,25 +18,15 @@ final class AuthorizationService
      */
     public function permissionsFor(User $user): Collection
     {
-        return Permission::query()
-            ->where(function (Builder $query) use ($user): void {
-                $query->whereHas('roles', fn (Builder $roleQuery) => $roleQuery->whereKey($user->role_id))
-                    ->orWhereHas('users', fn (Builder $userQuery) => $userQuery->whereKey($user->getKey()));
-            })
-            ->orderBy('name')
-            ->get();
+        $user->loadMissing('roles', 'permissions');
+
+        return $user->getAllPermissions()->sortBy('name')->values();
     }
 
     public function hasPermission(User $user, PermissionName|string $permission): bool
     {
         $name = $permission instanceof PermissionName ? $permission->value : $permission;
 
-        return Permission::query()
-            ->where('name', $name)
-            ->where(function (Builder $query) use ($user): void {
-                $query->whereHas('roles', fn (Builder $roleQuery) => $roleQuery->whereKey($user->role_id))
-                    ->orWhereHas('users', fn (Builder $userQuery) => $userQuery->whereKey($user->getKey()));
-            })
-            ->exists();
+        return $user->hasPermissionTo($name);
     }
 }

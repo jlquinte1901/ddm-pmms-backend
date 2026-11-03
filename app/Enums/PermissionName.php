@@ -17,6 +17,7 @@ enum PermissionName: string
     case DdmDocumentsArchive = 'ddm.documents.archive';
     case DdmDocumentsDelete = 'ddm.documents.delete';
     case DdmDownloadsRequest = 'ddm.downloads.request';
+    case DdmDownloadsDirect = 'ddm.downloads.direct';
     case DdmDownloadsApproveRestricted = 'ddm.downloads.approve-restricted';
     case DdmDownloadsApproveConfidential = 'ddm.downloads.approve-confidential';
     case DdmCategoriesManage = 'ddm.categories.manage';

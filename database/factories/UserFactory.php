@@ -3,11 +3,11 @@
 namespace Database\Factories;
 
 use App\Enums\RoleName;
-use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Spatie\Permission\Models\Role;
 
 /**
  * @extends Factory<User>
@@ -27,7 +27,6 @@ class UserFactory extends Factory
     public function definition(): array
     {
         return [
-            'role_id' => fn (): int => $this->roleId(RoleName::Viewer),
             'full_name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
             'email_verified_at' => now(),
@@ -51,22 +50,30 @@ class UserFactory extends Factory
 
     public function superAdmin(): static
     {
-        return $this->withRole(RoleName::SuperAdmin);
+        return $this->afterCreating(function (User $user): void {
+            $this->assignRole($user, RoleName::SuperAdmin);
+        });
     }
 
     public function admin(): static
     {
-        return $this->withRole(RoleName::Admin);
+        return $this->afterCreating(function (User $user): void {
+            $this->assignRole($user, RoleName::Admin);
+        });
     }
 
     public function projectEngineer(): static
     {
-        return $this->withRole(RoleName::ProjectEngineer);
+        return $this->afterCreating(function (User $user): void {
+            $this->assignRole($user, RoleName::ProjectEngineer);
+        });
     }
 
     public function viewer(): static
     {
-        return $this->withRole(RoleName::Viewer);
+        return $this->afterCreating(function (User $user): void {
+            $this->assignRole($user, RoleName::Viewer);
+        });
     }
 
     public function inactive(): static
@@ -76,18 +83,13 @@ class UserFactory extends Factory
         ]);
     }
 
-    private function withRole(RoleName $role): static
+    private function assignRole(User $user, RoleName $role): void
     {
-        return $this->state(fn (array $attributes) => [
-            'role_id' => $this->roleId($role),
-        ]);
-    }
-
-    private function roleId(RoleName $role): int
-    {
-        return Role::query()->firstOrCreate(
-            ['name' => $role->value],
-            ['label' => $role->label()],
-        )->id;
+        $guard = config('auth.defaults.guard', 'web');
+        $roleModel = Role::query()->firstOrCreate(
+            ['name' => $role->value, 'guard_name' => $guard],
+            [],
+        );
+        $user->syncRoles([$roleModel]);
     }
 }

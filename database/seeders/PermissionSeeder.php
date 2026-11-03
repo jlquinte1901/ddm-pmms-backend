@@ -3,8 +3,8 @@
 namespace Database\Seeders;
 
 use App\Enums\PermissionName;
-use App\Models\Permission;
 use Illuminate\Database\Seeder;
+use Spatie\Permission\Models\Permission;
 
 class PermissionSeeder extends Seeder
 {
@@ -13,10 +13,11 @@ class PermissionSeeder extends Seeder
      */
     public function run(): void
     {
+        $guard = config('auth.defaults.guard', 'web');
         foreach (PermissionName::cases() as $permission) {
             Permission::query()->updateOrCreate(
-                ['name' => $permission->value],
-                ['module' => $permission->module()],
+                ['name' => $permission->value, 'guard_name' => $guard],
+                [],
             );
         }
     }

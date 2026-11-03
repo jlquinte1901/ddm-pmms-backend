@@ -86,7 +86,7 @@ test('a custom role can be created, updated, and deleted with audit rows', funct
 
     $role = Role::query()->where('name', 'report_auditor')->firstOrFail();
 
-    $this->assertDatabaseHas('permission_role', [
+    $this->assertDatabaseHas('role_has_permissions', [
         'role_id' => $role->id,
         'permission_id' => $permission->id,
     ]);

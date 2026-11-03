@@ -12,7 +12,7 @@ The primary objective is to centralize departmental document management and prov
 
 This file applies to both backend and frontend work in this repository. You are the AI software engineering assistant for the project. Do not treat it as a generic CRUD application: understand the business processes, access restrictions, data integrity requirements, document lifecycle, and project monitoring rules before implementing features. Work incrementally, analyze the existing codebase before changing anything, explain important decisions, and never assume a feature is required merely because a package or technology is available.
 
-Detailed project rules, the confirmed schema, and the implementation order are in `ddm-pmms-backend.md` (the backend engineering guide) and in the DDM-PMMS Backend Design Document. Read `ddm-pmms-backend.md` before planning backend work. Section 16 of that guide lists decisions still awaiting the user's confirmation. Do not treat them as settled.
+Detailed project rules, the confirmed schema, and the implementation order are in `ddm-pmms-backend.md` (the backend engineering guide) and in the DDM-PMMS Backend Design Document. Read `ddm-pmms-backend.md` before planning backend work. Section 16 of that guide lists the 20 decisions the user has approved as final. Do not reopen or change them without the user's explicit approval.
 
 ### 2. System Architecture
 
@@ -90,7 +90,7 @@ The backend must support the following capabilities as required by the approved 
    - Admin and Super Admin upload, add versions, edit metadata, archive, and restore.
    - Only Super Admin soft-deletes and undeletes, with a required reason.
    - PEs and Viewers only view DDM documents.
-7. Every category has a default access level (`open`, `restricted`, or `confidential`), and a document may override it. Open documents download directly for users who can view them. Restricted documents need an approved, unexpired request decided by any Admin. Confidential documents need one decided by Super Admin only. Nobody approves their own request, and approvals expire.
+7. Every document is treated as sensitive, so there is no open level. Every category has a default access level (`restricted` by default, or `confidential`), and a document may override it. Every download needs an approved, unexpired request. Restricted requests are decided by any Admin, and confidential requests by Super Admin only. Nobody approves their own request, and approvals expire. Only two cases download directly, both audit-logged: Super Admin, and the owning PE for documents of his own projects. Being able to view a document never allows downloading it. Admin, Viewers, and other PEs always request.
 8. Validate uploaded files, file types, sizes, metadata, and storage operations on the backend.
 9. Do not expose private storage paths or permit unauthorized direct file access.
 10. Record relevant document creation, updates, version changes, archive operations, download requests, decisions, downloads, and other significant actions in accordance with the audit requirements.
@@ -143,7 +143,7 @@ The backend must support:
 
 **Viewer:** Has read-only access. The Viewer role has no permissions by itself. Super Admin grants module access (DDM, PMMS, or both) per user.
 
-`pmms.projects.administer`, held by Admin and Super Admin, covers only these actions: terminate, reopen a completed or terminated project, reassign the PE, and soft-delete or restore a project. Each requires a reason and is recorded in project history and the audit trail. Admin and Super Admin cannot otherwise edit project data.
+`pmms.projects.administer`, held by Admin and Super Admin, covers only these actions: terminate, reopen a completed or terminated project, reassign the PE, soft-delete or restore a project, and correct a planned date after the project has started. Each requires a reason and is recorded in project history and the audit trail. Admin and Super Admin cannot otherwise edit project data.
 
 Ownership rules:
 
@@ -158,7 +158,7 @@ Never rely solely on frontend visibility or disabled controls to enforce permiss
 
 Derive the authenticated actor from the server-side authentication context. Never trust client-supplied user IDs, role IDs, or project ownership values as proof of authorization.
 
-Do not hardcode role IDs throughout business logic. Use named roles and explicit permissions (named `module.resource.action`, for example `ddm.documents.upload`). Follow the repository's existing authorization conventions. If the repository already has a permission package, map the design's permission names onto it. If not, confirm the approach with the user before writing migrations.
+Do not hardcode role IDs throughout business logic. Use named roles and explicit permissions (named `module.resource.action`, for example `ddm.documents.upload`) through Spatie Laravel Permission. Follow the repository's existing authorization conventions.
 
 ### 5. The 35-Day Critical-Threshold Rule
 
@@ -188,7 +188,7 @@ Use the following indicator definitions:
 5. The PE controls pausing. A PE suspends or postpones a project (from `not_started` or `ongoing`) with a required reason, which sets `paused_since`.
 6. To resume (from `suspended` or `postponed` only), the PE must enter a `revised_finish_date` that is not before today, plus a remark. The status becomes `ongoing` and `paused_since` is cleared.
 7. Allow authorized PEs to provide remarks explaining project delays and relevant circumstances. A progress report may keep the same percentage so a PE can explain a delay without changing progress. Lowering progress requires remarks.
-8. Planned dates can be edited only while a project is `not_started`. Handle missing dates and invalid date ranges (planned finish before planned start) through validation rather than silently calculating misleading indicators.
+8. Planned dates can be edited only while a project is `not_started`. After that, only Admin or Super Admin can correct them, through the administer permission with a reason. Handle missing dates and invalid date ranges (planned finish before planned start) through validation rather than silently calculating misleading indicators.
 9. Implement one tested indicator class and matching query scopes, with today passed in as a parameter so tests can freeze the date. Use them in project lists, dashboards, project details, and reports. Do not duplicate threshold calculations in controllers or report endpoints.
 10. Do not implement automatic email, SMS, or push notifications as part of the initial scope unless separately approved.
 
@@ -284,12 +284,12 @@ The database design must support the established architecture and business rules
 - Validate status and access-level values with PHP backed enums and, where useful, `CHECK` constraints.
 - Avoid duplicating project or user information unnecessarily.
 - Use database transactions for multi-step operations requiring consistency.
-- Define deletion behavior deliberately. Use `RESTRICT` on foreign keys, except cascade on the two permission pivot tables. Users, documents, and projects are deactivated or soft-deleted, never hard-deleted. `audit_logs` and `project_history` have no soft deletes.
+- Define deletion behavior deliberately. Use `RESTRICT` on foreign keys, except the permission pivot tables, which follow Spatie's defaults. Users, documents, and projects are deactivated or soft-deleted, never hard-deleted. `audit_logs` and `project_history` have no soft deletes.
 - Do not use cascading deletion in a way that unintentionally destroys required historical records.
 - Use migrations as the authoritative mechanism for schema changes. Create `projects` before `documents`, because `documents.project_id` references it.
 - Follow existing naming conventions and inspect related migrations and models before modifying the schema.
 
-The schema is critical to this project. The proposed design has 15 tables (the rules behind it are confirmed, but five structural choices are still pending approval in `ddm-pmms-backend.md` section 16, decisions 15 to 19). Do not create, change, or migrate any table, column, index, or constraint without the user's explicit approval: `users`, `roles`, `permissions`, `permission_role`, `permission_user`, `audit_logs`, `personal_access_tokens`, `document_categories`, `documents`, `document_versions`, `document_download_requests`, `project_categories`, `projects`, `project_updates`, and `project_history`. Check the repository for existing tables before creating any of them.
+The schema is critical to this project. The proposed design has 11 tables of its own plus Spatie Laravel Permission's package tables. The schema and the decisions behind it are final and approved (`ddm-pmms-backend.md` section 16). Do not create, change, or migrate any table, column, index, or constraint without the user's explicit approval. The project's own tables are `users`, `audit_logs`, `personal_access_tokens`, `document_categories`, `documents`, `document_versions`, `document_download_requests`, `project_categories`, `projects`, `project_updates`, and `project_history`. Roles and permissions use Spatie's tables, and `users` has no `role_id` column. `projects.contract_number` is nullable with a plain index and is not unique. Check the repository for existing tables before creating any of them.
 
 Do not assume that every conceptual entity needs a separate table. Do not create the optional future tables (`document_types`, `contractors`, `fund_sources`, `saved_reports`, `project_assignments`, `project_phases`) without approval.
 
@@ -319,7 +319,7 @@ Use Laravel's configured storage mechanism for document files.
 
 - Store document metadata separately from file contents.
 - Validate uploads on the server using an allow-list of extensions. Detect the MIME type from the file content, require it to agree with the extension, and ignore the client-sent type.
-- Use a configurable size limit and keep the PHP and web server limits aligned. Proposed types and size (PDF, Word, Excel, PowerPoint, JPEG, PNG, 50 MB) are awaiting confirmation.
+- Use a configurable size limit and keep the PHP and web server limits aligned. Confirmed types and size: PDF, Word, Excel, PowerPoint, JPEG, and PNG, up to 50 MB. Engineering plans are uploaded as PDF, so DWG and other CAD formats are rejected.
 - Generate safe, random storage paths rather than relying on user-supplied filenames. Keep the user's filename only in `original_name`, sanitized for display.
 - Prevent path traversal and unauthorized file access.
 - Ensure file replacement and version creation do not unintentionally overwrite historical files.
@@ -371,7 +371,7 @@ These are the intended technologies, not a requirement to use every listed packa
 - MySQL (InnoDB, `utf8mb4`)
 - Laravel Storage on a private disk for document files
 - Pest for unit and feature tests
-- Roles and permissions in the design's own tables (`roles`, `permissions`, `permission_role`, `permission_user`). Spatie Laravel Permission is not part of the design. See decision 14 in `ddm-pmms-backend.md` section 16.
+- Spatie Laravel Permission for roles and permissions (confirmed, decision 14). Permission names follow `module.resource.action`. Spatie's own tables replace custom permission tables, and there is no `users.role_id`. One role per user is enforced by the application. If the package is not installed yet, check its Laravel 13 compatibility before installing.
 - Report exports are CSV only. Do not add Laravel Excel, DomPDF, or similar without approval.
 
 **Frontend**
@@ -400,11 +400,11 @@ The frontend consumes the REST API described in the Backend Design Document. The
    - Resuming needs a new finish date (`revised_finish_date`) and a remark.
    - Lowering progress needs remarks.
    - Reporting 100% completes the project, so confirm it with the PE.
-   - Terminate, reopen, reassign, and delete appear only for users with `pmms.projects.administer` and require a reason.
-   - Planned dates are editable only while the project is not started.
+   - Terminate, reopen, reassign, delete, and planned-date correction appear only for users with `pmms.projects.administer` and require a reason.
+   - Planned dates are editable only while the project is not started. Afterwards only Admin or Super Admin can correct them, with a reason.
 6. **Show project history as the API returns it.** Group changed fields by `change_set_id` and show the actor, action, previous value, new value, time, and reason. Do not edit or delete history from the UI.
 7. **Handle the standard error format.** Responses carry `message`, a stable `code`, and `errors` keyed by field. Show field errors from `422`. Treat `404` as not found (an out-of-scope project also returns `404`). Treat `403` as not allowed, `409` as a state conflict, and `429` as throttled. Handle `download_approval_required` by offering the download request flow. Never show stack traces or raw server errors to users.
-8. **Documents.** Upload with multipart requests. Never build or display storage paths or public file URLs. Every download goes through the authorized download endpoint. Show a document's access level and whether the user can download it. Offer the request flow for restricted and confidential documents, and let eligible approvers approve or deny. Show version history, and make clear that a new upload creates a new version and never overwrites the old one. Archive and delete are different actions with different labels, and only Super Admin sees delete.
+8. **Documents.** Upload with multipart requests. Never build or display storage paths or public file URLs. Every download goes through the authorized download endpoint. Show a document's access level and whether the user can download it. Offer the request flow for every document the user cannot download directly, and let eligible approvers approve or deny. Show version history, and make clear that a new upload creates a new version and never overwrites the old one. Archive and delete are different actions with different labels, and only Super Admin sees delete.
 9. **Server-side filtering and pagination.** Send filters, sorting, and page parameters to the API. Do not load whole collections and filter in the browser. A PE sees only his own projects, and the UI must not pretend otherwise.
 10. **Reports and exports.** Export CSV through the API. Do not generate reports from partial client data.
 11. **Validation.** Client-side validation (React Hook Form with Zod or Yup) improves the experience, but the backend validation is authoritative. Match the backend rules (progress 0 to 100, required reasons, date order) without duplicating business logic.
@@ -415,8 +415,8 @@ The frontend consumes the REST API described in the Backend Design Document. The
 
 Work in small, reviewable stages. Work only on the stage or task the user approves. The stages are a recommended order, not permission to implement everything automatically. The backend stages map to the eight implementation phases in `ddm-pmms-backend.md`.
 
-1. **Repository assessment.** Inspect the structure, routes, migrations, models, authentication, permissions, dependencies, tests, installed skills, and the frontend. Report what exists and what is missing, including whether Spatie Laravel Permission is installed. Do not rewrite existing work without understanding it.
-2. **Architecture and ERD.** Drafted in the Backend Design Document and awaiting closure of the pending decisions. Reconcile names and conventions with the repository.
+1. **Repository assessment.** Inspect the structure, routes, migrations, models, authentication, permissions, dependencies, tests, installed skills, and the frontend. Report what exists and what is missing, including whether Spatie Laravel Permission is installed and which version. Do not rewrite existing work without understanding it.
+2. **Architecture and ERD.** Drafted in the Backend Design Document, with all decisions approved as final. Reconcile names and conventions with the repository.
 3. **Database foundation, Shared Core, and audit.** Migrations (only after approval), seeders, factories, authentication, users, roles, permissions, and the shared audit service.
 4. **DDM.** Categories, upload, versions, storage service, search, archive and restore, soft-delete, access levels, download requests, downloads, and reports.
 5. **PMMS.** Projects, ownership scope, administer actions, the history recorder, progress, pause, resume, completion, the indicator class and scopes, project documents, dashboards, and reports.
@@ -431,7 +431,7 @@ When the user requests a feature:
 1. Explain your understanding of the requirement.
 2. Identify the affected module (Shared Core, DDM, or PMMS) and whether the work is backend, frontend, or both.
 3. Inspect existing code and the applicable instructions.
-4. Check `ddm-pmms-backend.md` section 16. If the work depends on a pending decision, say so and ask before any hard-to-reverse choice, especially migrations.
+4. Check `ddm-pmms-backend.md` section 16. If the work conflicts with an approved decision, or needs something it does not cover, say so and ask before any hard-to-reverse choice, especially migrations.
 5. Identify the database changes, API endpoints, authorization requirements, and tests involved.
 6. Explain significant design decisions or ambiguities.
 7. Implement only the approved scope.
@@ -574,7 +574,7 @@ Do not run `vendor/bin/pint --test --format agent`. Use Pint to fix formatting i
 Before implementing a task:
 
 1. Read this file and follow all applicable instructions.
-2. Read `ddm-pmms-backend.md`, including its list of pending decisions in section 16.
+2. Read `ddm-pmms-backend.md`, including the approved decisions in section 16.
 3. Inspect the repository's current implementation and conventions.
 4. Read `.ai/rules/index.md` and all applicable rules if `.ai/rules` exists.
 5. Activate and read the relevant skills for the current task.
@@ -585,4 +585,145 @@ Before implementing a task:
 10. Test the affected behavior. Format modified PHP files with Pint. For frontend changes, run the lint, type-check, and test scripts defined in `package.json` that apply.
 11. Explain what changed, which tests were run, and any unresolved issues.
 
-If a business rule is ambiguous, explain the ambiguity and request clarification rather than inventing behavior. Ask before writing migrations that depend on a decision still pending in `ddm-pmms-backend.md`. Do not claim that code, tests, or migrations were verified unless the relevant checks were actually performed.
+If a business rule is ambiguous, explain the ambiguity and request clarification rather than inventing behavior. Ask before writing migrations: first complete the repository assessment, then present the migration plan for approval. Do not claim that code, tests, or migrations were verified unless the relevant checks were actually performed.
+
+===
+
+<laravel-boost-guidelines>
+=== foundation rules ===
+
+# Laravel Boost Guidelines
+
+## Foundational Context
+
+This application is a Laravel application running on PHP 8.5. Always use the APIs that match the installed major version of each package — do not assume a version.
+
+Before relying on a package's API, confirm its installed version:
+- PHP packages: run `composer show --direct` to list direct dependencies with versions, or `composer show <vendor/package>` for a single package.
+- JS packages: check `package.json` for the installed versions.
+
+## Skills Activation
+
+This project has domain-specific skills available in `**/skills/**`. You MUST activate the relevant skill whenever you work in that domain—don't wait until you're stuck.
+
+## Conventions
+
+- You must follow all existing code conventions used in this application. When creating or editing a file, check sibling files for the correct structure, approach, and naming.
+- Use descriptive names for variables and methods. For example, `isRegisteredForDiscounts`, not `discount()`.
+- Check for existing components to reuse before writing a new one.
+
+## Verification Scripts
+
+- Do not create verification scripts or tinker when tests cover that functionality and prove they work. Unit and feature tests are more important.
+
+## Application Structure & Architecture
+
+- Stick to existing directory structure; don't create new base folders without approval.
+- Do not change the application's dependencies without approval.
+
+## Frontend Bundling
+
+- If a frontend change doesn't show in the UI or you get a "Unable to locate file in Vite manifest" error, run `npm run build` or ask the user to run `npm run dev` or `composer run dev`.
+
+## Documentation Files
+
+- You must only create documentation files if explicitly requested by the user.
+
+=== boost rules ===
+
+# Laravel Boost
+
+## Project Rules
+
+- This project contains committed, area-grouped rules in `.ai/rules` when that directory exists, including path-scoped framework guidelines under `.ai/rules/boost`. Before you enter plan mode or create/edit any file, you MUST first: open @.ai/rules/index.md (it maps file globs to rule files), read every rule file whose globs cover the path(s) in scope, and run `grep -rin 'keyword' .ai/rules` to catch what a path match alone misses. Do not write code until you have read and are following every matching rule. If `.ai/rules` does not exist, continue without it.
+
+## Artisan
+
+- Run Artisan commands directly via the command line (e.g., `php artisan route:list`). Use `php artisan list` to discover available commands and `php artisan [command] --help` to check parameters.
+- Inspect routes with `php artisan route:list`. Filter with: `--method=GET`, `--name=users`, `--path=api`, `--except-vendor`, `--only-vendor`.
+- Read configuration values using dot notation: `php artisan config:show app.name`, `php artisan config:show database.default`. Or read config files directly from the `config/` directory.
+
+## Tinker
+
+- Execute PHP in app context for debugging and testing code. Do not create models without user approval, prefer tests with factories instead. Prefer existing Artisan commands over custom tinker code.
+- Always use single quotes to prevent shell expansion: `php artisan tinker --execute 'Your::code();'`
+  - Double quotes for PHP strings inside: `php artisan tinker --execute 'User::where("active", true)->count();'`
+
+=== php rules ===
+
+# PHP
+
+- Always use curly braces for control structures, even for single-line bodies.
+- Use PHP 8 constructor property promotion: `public function __construct(public GitHub $github) { }`. Do not leave empty zero-parameter `__construct()` methods unless the constructor is private.
+- Use explicit return type declarations and type hints for all method parameters: `function isAccessible(User $user, ?string $path = null): bool`
+- Use TitleCase for Enum keys: `FavoritePerson`, `BestLake`, `Monthly`.
+- Prefer PHPDoc blocks over inline comments. Only add inline comments for exceptionally complex logic.
+- Use array shape type definitions in PHPDoc blocks.
+
+=== deployments rules ===
+
+# Deployment
+
+- Laravel can be deployed using [Laravel Cloud](https://cloud.laravel.com/), which is the fastest way to deploy and scale production Laravel applications.
+- Activate the `deploying-to-cloud` skill whenever deploying to Laravel Cloud, configuring Cloud environments or resources, using the Cloud CLI, or troubleshooting Cloud deployments.
+
+=== tests rules ===
+
+# Test Enforcement
+
+- Add or update tests for behavior and logic changes when a test provides meaningful regression coverage.
+- Pure copy, styling, and layout-only changes do not require new or updated tests.
+- When test coverage applies, run the affected tests and ensure they pass.
+- Test the changed behavior and its important failure modes, but do not add tests beyond them.
+- Read the `testing-best-practices` skill before writing tests.
+
+=== laravel/core rules ===
+
+# Do Things the Laravel Way
+
+- Use `php artisan make:` commands to create new files (i.e. migrations, controllers, models, etc.). You can list available Artisan commands using `php artisan list` and check their parameters with `php artisan [command] --help`.
+- If you're creating a generic PHP class, use `php artisan make:class`.
+- Pass `--no-interaction` to all Artisan commands to ensure they work without user input. You should also pass the correct `--options` to ensure correct behavior.
+
+### Model Creation
+
+- When creating new models, create useful factories and seeders for them too. Ask the user if they need any other things, using `php artisan make:model --help` to check the available options.
+
+## APIs & Eloquent Resources
+
+- For APIs, default to using Eloquent API Resources and API versioning unless existing API routes do not, then you should follow existing application convention.
+
+## URL Generation
+
+- When generating links to other pages, prefer named routes and the `route()` function.
+
+## Testing
+
+- When creating models for tests, use the factories for the models. Check if the factory has custom states that can be used before manually setting up the model.
+- Faker: Use methods such as `$this->faker->word()` or `fake()->randomDigit()`. Follow existing conventions whether to use `$this->faker` or `fake()`.
+- When creating tests, make use of `php artisan make:test [options] {name}` to create a feature test, and pass `--unit` to create a unit test. Most tests should be feature tests.
+
+=== pint/core rules ===
+
+# Laravel Pint Code Formatter
+
+- If you have modified any PHP files, you must run `vendor/bin/pint --dirty --format agent` before finalizing changes to ensure your code matches the project's expected style.
+- Do not run `vendor/bin/pint --test --format agent`, simply run `vendor/bin/pint --format agent` to fix any formatting issues.
+
+=== pest/core rules ===
+
+# Pest
+
+- This project uses Pest. Create tests with `php artisan make:test --pest {name}`.
+- Do not include the test suite directory in `{name}`. Use `SomeFeatureTest`, not `Feature/SomeFeatureTest`.
+- Read the `testing-best-practices` skill for guidance on coverage, naming, structure, dependency isolation, and review.
+- Do not delete tests or test files without approval. They are part of the application.
+
+## Running Tests
+
+- Run the narrowest set of tests that covers the change. Pass a file path or `--filter=testName` to `php artisan test --compact`.
+- Rerun a test after each change to it.
+- Run `vendor/bin/pest` to call the test runner directly. It accepts the same file path and `--filter=testName` arguments.
+- After the feature tests pass, ask the user to run the complete suite with `php artisan test --compact`.
+
+</laravel-boost-guidelines>

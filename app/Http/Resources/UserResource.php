@@ -14,6 +14,8 @@ final class UserResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $role = $this->whenLoaded('roles') ? $this->roles->first() : ($this->relationLoaded('role') ? $this->role : null);
+
         return [
             'id' => $this->id,
             'full_name' => $this->full_name,
@@ -21,7 +23,7 @@ final class UserResource extends JsonResource
             'section' => $this->section,
             'is_active' => $this->is_active,
             'last_login_at' => $this->last_login_at?->toIso8601String(),
-            'role' => new RoleResource($this->whenLoaded('role')),
+            'role' => $role ? new RoleResource($role) : null,
             'permissions' => PermissionResource::collection($this->whenLoaded('effectivePermissions')),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
