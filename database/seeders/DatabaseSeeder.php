@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             PermissionSeeder::class,
             RoleSeeder::class,
             RolePermissionSeeder::class,
+            SuperAdminSeeder::class,
         ]);
 
         User::factory()->superAdmin()->create([
