@@ -51,7 +51,7 @@ test('an admin can upload a DDM document with a private first version', function
     $admin = User::factory()->admin()->create();
     $category = DocumentCategory::factory()->create([
         'name' => 'Budget Records',
-        'default_access_level' => DocumentAccessLevel::Open,
+        'default_access_level' => DocumentAccessLevel::Restricted,
     ]);
 
     Sanctum::actingAs($admin);
@@ -70,7 +70,7 @@ test('an admin can upload a DDM document with a private first version', function
     $response->assertCreated()
         ->assertJsonPath('data.title', 'Annual Budget')
         ->assertJsonPath('data.state', Document::STATE_ACTIVE)
-        ->assertJsonPath('data.effective_access_level', DocumentAccessLevel::Open->value)
+        ->assertJsonPath('data.effective_access_level', DocumentAccessLevel::Restricted->value)
         ->assertJsonPath('data.latest_version_number', 1)
         ->assertJsonPath('data.latest_version.original_name', 'Annual Budget.pdf')
         ->assertJsonPath('data.can_download', true)
@@ -100,7 +100,7 @@ test('document uploads are limited to users with upload permission', function (R
     seedAccessControl();
     Storage::fake('local');
 
-    $user = User::factory()->for(roleNamed($role))->create();
+    $user = userWithRole($role);
     $category = DocumentCategory::factory()->create(['name' => 'Upload '.$role->value]);
 
     Sanctum::actingAs($user);
@@ -279,7 +279,7 @@ test('an admin can archive and unarchive a document and archived documents rejec
 test('document archiving is limited to users with archive permission', function (RoleName $role, int $status) {
     seedAccessControl();
 
-    $user = User::factory()->for(roleNamed($role))->create();
+    $user = userWithRole($role);
     $category = DocumentCategory::factory()->create();
     $document = ddmDocumentRecord($category, $user);
 
@@ -424,16 +424,16 @@ test('the DDM document list applies DDM scope, state, access, date, uploader, an
 
     $admin = User::factory()->superAdmin()->create();
     $engineer = User::factory()->projectEngineer()->create();
-    $openCategory = DocumentCategory::factory()->create([
-        'name' => 'Open Records',
-        'default_access_level' => DocumentAccessLevel::Open,
+    $confidentialCategory = DocumentCategory::factory()->create([
+        'name' => 'Confidential Records',
+        'default_access_level' => DocumentAccessLevel::Confidential,
     ]);
     $restrictedCategory = DocumentCategory::factory()->create([
         'name' => 'Restricted Records',
         'default_access_level' => DocumentAccessLevel::Restricted,
     ]);
 
-    $open = ddmDocumentRecord($openCategory, $engineer, [
+    $confidential = ddmDocumentRecord($confidentialCategory, $engineer, [
         'title' => 'Budget Report',
         'reference_no' => 'BUD-2026',
         'document_date' => '2026-02-01',
@@ -443,13 +443,13 @@ test('the DDM document list applies DDM scope, state, access, date, uploader, an
         'reference_no' => 'HR-2026',
         'document_date' => '2026-03-01',
     ]);
-    $archived = ddmDocumentRecord($openCategory, $engineer, [
+    $archived = ddmDocumentRecord($confidentialCategory, $engineer, [
         'title' => 'Old Budget',
         'is_archived' => true,
         'archived_at' => now(),
         'archived_by' => $admin->id,
     ]);
-    $deleted = ddmDocumentRecord($openCategory, $engineer, ['title' => 'Deleted Budget']);
+    $deleted = ddmDocumentRecord($confidentialCategory, $engineer, ['title' => 'Deleted Budget']);
     $deleted->delete();
 
     $project = Project::factory()->create();
@@ -485,7 +485,7 @@ test('the DDM document list applies DDM scope, state, access, date, uploader, an
     $this->getJson('/api/v1/ddm/documents?q=Budget')
         ->assertOk()
         ->assertJsonCount(1, 'data')
-        ->assertJsonPath('data.0.id', $open->id);
+        ->assertJsonPath('data.0.id', $confidential->id);
 
     $this->getJson('/api/v1/ddm/documents?access_level=restricted')
         ->assertOk()
@@ -497,14 +497,19 @@ test('the DDM document list applies DDM scope, state, access, date, uploader, an
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.id', $inheritedRestricted->id);
 
-    $this->getJson('/api/v1/ddm/documents?category_id='.$openCategory->id)
+    $this->getJson('/api/v1/ddm/documents?category_id='.$confidentialCategory->id)
         ->assertOk()
         ->assertJsonCount(1, 'data')
-        ->assertJsonPath('data.0.id', $open->id);
+        ->assertJsonPath('data.0.id', $confidential->id);
 
-    $this->getJson('/api/v1/ddm/documents?state=all&category_id='.$openCategory->id)
+    $this->getJson('/api/v1/ddm/documents?state=all&category_id='.$confidentialCategory->id)
         ->assertOk()
         ->assertJsonCount(2, 'data');
+
+    $this->getJson('/api/v1/ddm/documents?access_level=confidential')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $confidential->id);
 
     $this->getJson('/api/v1/ddm/documents?date_from=2026-02-15')
         ->assertOk()
@@ -519,7 +524,7 @@ test('the DDM document list applies DDM scope, state, access, date, uploader, an
 test('document reads require DDM document view permission', function (RoleName $role, int $status) {
     seedAccessControl();
 
-    $user = User::factory()->for(roleNamed($role))->create();
+    $user = userWithRole($role);
     Sanctum::actingAs($user);
 
     $this->getJson('/api/v1/ddm/documents')->assertStatus($status);

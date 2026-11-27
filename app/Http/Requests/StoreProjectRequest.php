@@ -29,7 +29,6 @@ final class StoreProjectRequest extends FormRequest
                 'nullable',
                 'string',
                 'max:100',
-                Rule::unique('projects', 'contract_number'),
             ],
             'location' => ['required', 'string', 'max:255'],
             'region' => ['nullable', 'string', 'max:100'],

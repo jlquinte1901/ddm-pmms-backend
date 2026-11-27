@@ -14,7 +14,7 @@ final class UserResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $role = $this->whenLoaded('roles') ? $this->roles->first() : ($this->relationLoaded('role') ? $this->role : null);
+        $role = $this->roles->first();
 
         return [
             'id' => $this->id,

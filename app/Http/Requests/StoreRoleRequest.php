@@ -18,7 +18,6 @@ final class StoreRoleRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:50', 'alpha_dash', 'unique:roles,name'],
-            'label' => ['required', 'string', 'max:100'],
             'permissions' => ['sometimes', 'array'],
             'permissions.*' => ['integer', 'distinct', 'exists:permissions,id'],
         ];

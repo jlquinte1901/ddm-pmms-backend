@@ -8,22 +8,27 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Spatie\Permission\Guard;
+use Spatie\Permission\PermissionRegistrar;
 
 final class RoleService
 {
     public function __construct(private readonly AuditService $audit) {}
 
     /**
-     * @param  array{name: string, label: string, permissions?: array<int, int>}  $data
+     * @param  array{name: string, permissions?: array<int, int>}  $data
      */
     public function create(array $data, User $actor): Role
     {
         $permissionIds = $data['permissions'] ?? [];
-        unset($data['permissions']);
 
         return DB::transaction(function () use ($data, $permissionIds, $actor): Role {
-            $role = Role::query()->create($data);
+            $role = Role::query()->create([
+                'name' => $data['name'],
+                'guard_name' => Guard::getDefaultName(User::class),
+            ]);
             $role->permissions()->sync($permissionIds);
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
 
             $this->audit->record(
                 module: 'shared',
@@ -38,7 +43,7 @@ final class RoleService
     }
 
     /**
-     * @param  array{name?: string, label?: string}  $data
+     * @param  array{name?: string}  $data
      */
     public function update(Role $role, array $data, User $actor): Role
     {
@@ -51,7 +56,11 @@ final class RoleService
         $oldValues = $this->snapshot($role);
 
         return DB::transaction(function () use ($role, $data, $actor, $oldValues): Role {
-            $role->fill($data)->save();
+            if (array_key_exists('name', $data)) {
+                $role->name = $data['name'];
+            }
+
+            $role->save();
 
             $this->audit->record(
                 module: 'shared',
@@ -72,7 +81,7 @@ final class RoleService
             throw new StateConflictException('System roles cannot be deleted.');
         }
 
-        if (User::withTrashed()->where('role_id', $role->getKey())->exists()) {
+        if (User::withTrashed()->whereHas('roles', fn ($query) => $query->whereKey($role->getKey()))->exists()) {
             throw new StateConflictException('The role is assigned to one or more users.');
         }
 
@@ -110,6 +119,7 @@ final class RoleService
 
         return DB::transaction(function () use ($role, $permissionIds, $actor, $oldPermissions, $newPermissions): Role {
             $role->permissions()->sync($permissionIds);
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
 
             $this->audit->record(
                 module: 'shared',

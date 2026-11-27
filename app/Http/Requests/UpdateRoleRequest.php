@@ -26,7 +26,6 @@ final class UpdateRoleRequest extends FormRequest
                 'alpha_dash',
                 Rule::unique('roles', 'name')->ignore($this->route('role')),
             ],
-            'label' => ['sometimes', 'required', 'string', 'max:100'],
         ];
     }
 }

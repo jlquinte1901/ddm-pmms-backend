@@ -4,9 +4,11 @@ namespace App\Services;
 
 use App\Exceptions\StateConflictException;
 use App\Models\Permission;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Spatie\Permission\PermissionRegistrar;
 
 final class UserService
 {
@@ -23,10 +25,11 @@ final class UserService
                 'full_name' => trim($data['full_name']),
                 'email' => Str::lower(trim($data['email'])),
                 'password' => $data['password'],
-                'role_id' => $data['role_id'],
                 'section' => $data['section'] ?? null,
                 'is_active' => true,
             ])->save();
+
+            $user->syncRoles([Role::query()->findOrFail((int) $data['role_id'])]);
 
             $this->audit->record(
                 module: 'shared',
@@ -46,7 +49,9 @@ final class UserService
     public function update(User $user, array $data, User $actor): User
     {
         $oldValues = $this->snapshot($user);
-        $roleChanged = array_key_exists('role_id', $data) && (int) $data['role_id'] !== (int) $user->role_id;
+        $currentRoleId = $user->roles->first()?->getKey();
+        $newRoleId = array_key_exists('role_id', $data) ? (int) $data['role_id'] : null;
+        $roleChanged = $newRoleId !== null && $newRoleId !== (int) $currentRoleId;
         $passwordChanged = array_key_exists('password', $data) && filled($data['password']);
 
         if ($actor->is($user) && $roleChanged) {
@@ -65,8 +70,15 @@ final class UserService
             unset($data['password']);
         }
 
-        return DB::transaction(function () use ($user, $data, $actor, $oldValues, $roleChanged, $passwordChanged): User {
+        unset($data['role_id']);
+
+        return DB::transaction(function () use ($user, $data, $actor, $oldValues, $roleChanged, $passwordChanged, $newRoleId): User {
             $user->forceFill($data)->save();
+
+            if ($roleChanged && $newRoleId !== null) {
+                $user->syncRoles([Role::query()->findOrFail($newRoleId)]);
+                $user->unsetRelation('roles');
+            }
 
             if ($roleChanged || $passwordChanged) {
                 $user->tokens()->delete();
@@ -194,7 +206,7 @@ final class UserService
      */
     public function syncPermissions(User $user, array $permissionIds, User $actor): User
     {
-        $oldPermissions = $user->grantedPermissions()
+        $oldPermissions = $user->permissions()
             ->orderBy('name')
             ->pluck('name')
             ->all();
@@ -211,7 +223,8 @@ final class UserService
                 ->mapWithKeys(fn (int $permissionId): array => [$permissionId => ['granted_by' => $actor->getKey()]])
                 ->all();
 
-            $user->grantedPermissions()->sync($grants);
+            $user->permissions()->sync($grants);
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
 
             $this->audit->record(
                 module: 'shared',
@@ -227,7 +240,7 @@ final class UserService
     }
 
     /**
-     * @return array{full_name: string, email: string, section: string|null, role_id: int, is_active: bool}
+     * @return array{full_name: string, email: string, section: string|null, role: string|null, is_active: bool}
      */
     private function snapshot(User $user): array
     {
@@ -235,7 +248,7 @@ final class UserService
             'full_name' => $user->full_name,
             'email' => $user->email,
             'section' => $user->section,
-            'role_id' => $user->role_id,
+            'role' => $user->roles->first()?->name,
             'is_active' => $user->is_active,
         ];
     }

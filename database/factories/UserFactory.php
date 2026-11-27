@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Spatie\Permission\Guard;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -85,11 +86,13 @@ class UserFactory extends Factory
 
     private function assignRole(User $user, RoleName $role): void
     {
-        $guard = config('auth.defaults.guard', 'web');
+        $guard = Guard::getDefaultName(User::class);
         $roleModel = Role::query()->firstOrCreate(
             ['name' => $role->value, 'guard_name' => $guard],
             [],
         );
-        $user->syncRoles([$roleModel]);
+        // Use the relation directly so the factory works even when a test has
+        // switched the default guard to sanctum via Sanctum::actingAs().
+        $user->roles()->sync([$roleModel->getKey()]);
     }
 }

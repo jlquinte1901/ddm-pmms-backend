@@ -3,7 +3,6 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 final class StorePermissionRequest extends FormRequest
 {
@@ -25,7 +24,6 @@ final class StorePermissionRequest extends FormRequest
                 'regex:/^[a-z0-9]+(?:\.[a-z0-9-]+)+$/',
                 'unique:permissions,name',
             ],
-            'module' => ['required', 'string', Rule::in(['shared', 'ddm', 'pmms'])],
         ];
     }
 }

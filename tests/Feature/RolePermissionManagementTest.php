@@ -56,7 +56,7 @@ test('a super admin can list and inspect roles with their permissions', function
 
 test('role and permission administration is restricted to super admins', function (RoleName $role, int $status) {
     seedAccessControl();
-    $user = User::factory()->for(roleNamed($role))->create();
+    $user = userWithRole($role);
     Sanctum::actingAs($user);
 
     $this->getJson('/api/v1/roles')->assertStatus($status);
@@ -97,8 +97,9 @@ test('a custom role can be created, updated, and deleted with audit rows', funct
     ]);
 
     $this->patchJson("/api/v1/roles/{$role->id}", [
-        'label' => 'Senior Report Auditor',
+        'name' => 'senior_report_auditor',
     ])->assertOk()
+        ->assertJsonPath('data.name', 'senior_report_auditor')
         ->assertJsonPath('data.label', 'Senior Report Auditor');
 
     $this->deleteJson("/api/v1/roles/{$role->id}")->assertNoContent();
@@ -123,7 +124,7 @@ test('system roles cannot be renamed or deleted', function () {
 
     $this->patchJson("/api/v1/roles/{$role->id}", [
         'label' => 'System Owner',
-    ])->assertOk()->assertJsonPath('data.label', 'System Owner');
+    ])->assertOk()->assertJsonPath('data.label', 'Super Admin');
 
     $this->deleteJson("/api/v1/roles/{$role->id}")
         ->assertStatus(409)
@@ -135,9 +136,9 @@ test('a custom role assigned to a user cannot be deleted', function () {
     $admin = User::factory()->superAdmin()->create();
     $role = Role::factory()->create([
         'name' => 'limited_role',
-        'label' => 'Limited Role',
     ]);
-    User::factory()->for($role)->create();
+    $user = User::factory()->create();
+    $user->assignRole($role);
     Sanctum::actingAs($admin);
 
     $this->deleteJson("/api/v1/roles/{$role->id}")
@@ -150,9 +151,9 @@ test('role permission changes take effect on the next request from the database'
     $admin = User::factory()->superAdmin()->create();
     $role = Role::factory()->create([
         'name' => 'audit_reader',
-        'label' => 'Audit Reader',
     ]);
-    $user = User::factory()->for($role)->create();
+    $user = User::factory()->create();
+    $user->assignRole($role);
     $permission = Permission::query()
         ->where('name', PermissionName::AuditView->value)
         ->firstOrFail();
@@ -186,8 +187,8 @@ test('custom permissions can be managed but system permissions are immutable', f
 
     $this->postJson('/api/v1/permissions', [
         'name' => 'custom.reports.view',
-        'module' => 'shared',
     ])->assertCreated()
+        ->assertJsonPath('data.module', 'shared')
         ->assertJsonPath('data.is_system', false);
 
     $customPermission = Permission::query()
@@ -195,8 +196,10 @@ test('custom permissions can be managed but system permissions are immutable', f
         ->firstOrFail();
 
     $this->patchJson("/api/v1/permissions/{$customPermission->id}", [
-        'module' => 'ddm',
-    ])->assertOk()->assertJsonPath('data.module', 'ddm');
+        'name' => 'pmms.custom.reports',
+    ])->assertOk()
+        ->assertJsonPath('data.name', 'pmms.custom.reports')
+        ->assertJsonPath('data.module', 'pmms');
 
     $this->patchJson("/api/v1/permissions/{$systemPermission->id}", [
         'name' => 'audit.read',
@@ -223,7 +226,7 @@ test('custom permissions can be managed but system permissions are immutable', f
 
 test('only a super admin can read the audit trail', function (RoleName $role, int $status) {
     seedAccessControl();
-    $user = User::factory()->for(roleNamed($role))->create();
+    $user = userWithRole($role);
     Sanctum::actingAs($user);
 
     $this->getJson('/api/v1/audit-logs')->assertStatus($status);

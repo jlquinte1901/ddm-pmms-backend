@@ -5,6 +5,7 @@ use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 
 uses(RefreshDatabase::class);
 
@@ -176,4 +177,66 @@ test('an inactive user is rejected even when the token still exists', function (
         ->getJson('/api/v1/auth/me')
         ->assertUnauthorized()
         ->assertJsonPath('code', 'unauthenticated');
+});
+
+test('changing the password revokes other tokens but keeps the current session', function () {
+    seedAccessControl();
+    $user = User::factory()->projectEngineer()->create(['password' => 'password1234']);
+    $current = $user->createToken('current', ['*'], now()->addHour());
+    $other = $user->createToken('other', ['*'], now()->addHour());
+
+    $this->withToken($current->plainTextToken)
+        ->postJson('/api/v1/auth/change-password', [
+            'current_password' => 'password1234',
+            'password' => 'new-password-1234',
+            'password_confirmation' => 'new-password-1234',
+        ])
+        ->assertNoContent();
+
+    expect(Hash::check('new-password-1234', $user->fresh()->password))->toBeTrue();
+
+    $this->assertDatabaseMissing('personal_access_tokens', ['id' => $other->accessToken->id]);
+    $this->assertDatabaseHas('personal_access_tokens', ['id' => $current->accessToken->id]);
+    $this->assertDatabaseHas('audit_logs', [
+        'user_id' => $user->id,
+        'action' => 'password_changed',
+    ]);
+
+    Auth::forgetGuards();
+
+    $this->withToken($other->plainTextToken)
+        ->getJson('/api/v1/auth/me')
+        ->assertUnauthorized();
+
+    Auth::forgetGuards();
+
+    $this->withToken($current->plainTextToken)
+        ->getJson('/api/v1/auth/me')
+        ->assertOk();
+});
+
+test('change password rejects a wrong current password and a short new password', function () {
+    seedAccessControl();
+    $user = User::factory()->projectEngineer()->create(['password' => 'password1234']);
+    $token = $user->createToken('phpunit', ['*'], now()->addHour());
+
+    $this->withToken($token->plainTextToken)
+        ->postJson('/api/v1/auth/change-password', [
+            'current_password' => 'wrong-password',
+            'password' => 'new-password-1234',
+            'password_confirmation' => 'new-password-1234',
+        ])
+        ->assertStatus(422)
+        ->assertJsonPath('errors.current_password.0', 'The current password is incorrect.');
+
+    $this->withToken($token->plainTextToken)
+        ->postJson('/api/v1/auth/change-password', [
+            'current_password' => 'password1234',
+            'password' => 'short',
+            'password_confirmation' => 'short',
+        ])
+        ->assertStatus(422)
+        ->assertJsonPath('errors.password.0', 'The password field must be at least 12 characters.');
+
+    expect(Hash::check('password1234', $user->fresh()->password))->toBeTrue();
 });

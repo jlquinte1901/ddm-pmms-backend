@@ -22,7 +22,7 @@ final class UserPermissionController extends Controller
             $request->user(),
         );
 
-        $user->load('role');
+        $user->load('roles');
         $user->setRelation('effectivePermissions', $authorization->permissionsFor($user));
 
         return new UserResource($user);

@@ -2,26 +2,28 @@
 
 namespace App\Models;
 
+use App\Enums\RoleName;
 use Database\Factories\RoleFactory;
-use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
+use Spatie\Permission\Models\Role as SpatieRole;
 
-#[Fillable(['name', 'label'])]
-class Role extends Model
+/**
+ * The application's roles are Spatie roles. The display label is derived from
+ * the RoleName enum (or the name) because the Spatie schema stores no label.
+ */
+class Role extends SpatieRole
 {
     /** @use HasFactory<RoleFactory> */
     use HasFactory;
 
-    public function users(): HasMany
+    protected static function newFactory(): RoleFactory
     {
-        return $this->hasMany(User::class);
+        return RoleFactory::new();
     }
 
-    public function permissions(): BelongsToMany
+    public function getLabelAttribute(): string
     {
-        return $this->belongsToMany(Permission::class, 'permission_role');
+        return RoleName::tryFrom($this->name)?->label() ?? Str::headline($this->name);
     }
 }

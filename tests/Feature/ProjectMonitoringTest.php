@@ -10,6 +10,7 @@ use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
+use Spatie\Permission\PermissionRegistrar;
 
 uses(RefreshDatabase::class);
 
@@ -338,6 +339,8 @@ test('viewers need explicit pmms permissions for dashboard and reports', functio
         ->all();
 
     $viewer->grantedPermissions()->attach($permissionIds);
+    $viewer->unsetRelation('permissions');
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
 
     Project::factory()->create();
 
@@ -462,4 +465,62 @@ test('report group by category and assigned project engineer counts all filtered
     expect($engineerGroup)->not->toBeNull()
         ->and($engineerGroup['label'])->toBe($engineer->full_name)
         ->and($engineerGroup['count'])->toBe(2);
+});
+
+test('an administrator can correct planned dates with a reason, history, and audit rows', function () {
+    seedAccessControl();
+    $engineer = User::factory()->projectEngineer()->create();
+    $admin = User::factory()->admin()->create();
+    $project = Project::factory()->ownedBy($engineer)->ongoing()->create([
+        'planned_start_date' => '2026-01-05',
+        'planned_finish_date' => '2026-06-30',
+    ]);
+
+    Sanctum::actingAs($admin);
+
+    $this->postJson("/api/v1/pmms/projects/{$project->id}/correct-planned-dates", [
+        'planned_start_date' => '2026-01-10',
+        'planned_finish_date' => '2026-07-31',
+        'reason' => 'Corrected per variation order.',
+    ])->assertOk()
+        ->assertJsonPath('data.planned_start_date', '2026-01-10')
+        ->assertJsonPath('data.planned_finish_date', '2026-07-31');
+
+    $this->assertDatabaseHas('project_history', [
+        'project_id' => $project->id,
+        'action' => 'planned_dates_corrected',
+        'field_name' => 'planned_finish_date',
+        'reason' => 'Corrected per variation order.',
+    ]);
+    $this->assertDatabaseHas('audit_logs', [
+        'user_id' => $admin->id,
+        'action' => 'project_planned_dates_corrected',
+    ]);
+});
+
+test('planned date correction requires administer permission and a valid range', function () {
+    seedAccessControl();
+    $engineer = User::factory()->projectEngineer()->create();
+    $admin = User::factory()->admin()->create();
+    $project = Project::factory()->ownedBy($engineer)->ongoing()->create([
+        'planned_start_date' => '2026-01-05',
+        'planned_finish_date' => '2026-06-30',
+    ]);
+
+    Sanctum::actingAs($engineer);
+
+    $this->postJson("/api/v1/pmms/projects/{$project->id}/correct-planned-dates", [
+        'planned_start_date' => '2026-01-10',
+        'planned_finish_date' => '2026-07-31',
+        'reason' => 'Engineer should not do this.',
+    ])->assertForbidden();
+
+    Sanctum::actingAs($admin);
+
+    $this->postJson("/api/v1/pmms/projects/{$project->id}/correct-planned-dates", [
+        'planned_start_date' => '2026-07-31',
+        'planned_finish_date' => '2026-01-10',
+        'reason' => 'Invalid range.',
+    ])->assertStatus(422)
+        ->assertJsonPath('errors.planned_finish_date.0', 'The planned finish date field must be a date after or equal to planned start date.');
 });

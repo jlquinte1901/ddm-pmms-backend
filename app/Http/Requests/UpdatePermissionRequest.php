@@ -26,7 +26,6 @@ final class UpdatePermissionRequest extends FormRequest
                 'regex:/^[a-z0-9]+(?:\.[a-z0-9-]+)+$/',
                 Rule::unique('permissions', 'name')->ignore($this->route('permission')),
             ],
-            'module' => ['sometimes', 'required', 'string', Rule::in(['shared', 'ddm', 'pmms'])],
         ];
     }
 }

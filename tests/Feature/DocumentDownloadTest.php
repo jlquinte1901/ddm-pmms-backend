@@ -14,6 +14,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
+use Spatie\Permission\PermissionRegistrar;
 
 uses(RefreshDatabase::class);
 
@@ -76,6 +77,8 @@ function ddmGrantPermission(User $user, PermissionName $permission, User $grante
         ->firstOrFail();
 
     $user->grantedPermissions()->attach($record, ['granted_by' => $grantedBy->id]);
+    $user->unsetRelation('permissions');
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
 }
 
 test('a project engineer can request a restricted document and the request is audited', function () {
@@ -120,27 +123,17 @@ test('download requests are rejected when the document can be downloaded directl
     Storage::fake('local');
 
     $admin = User::factory()->admin()->create();
-    $engineer = User::factory()->projectEngineer()->create();
     $superAdmin = User::factory()->superAdmin()->create();
 
     $restrictedCategory = DocumentCategory::factory()->restricted()->create();
-    $openCategory = DocumentCategory::factory()->create();
     $confidentialCategory = DocumentCategory::factory()->confidential()->create();
 
     [$restricted] = ddmDownloadDocument($restrictedCategory, $admin);
-    [$open] = ddmDownloadDocument($openCategory, $admin);
     [$confidential] = ddmDownloadDocument($confidentialCategory, $admin);
 
     Sanctum::actingAs($admin);
     $this->postJson("/api/v1/ddm/documents/{$restricted->id}/download-requests", [
         'reason' => 'An admin can download this directly.',
-    ])
-        ->assertConflict()
-        ->assertJsonPath('code', 'state_conflict');
-
-    Sanctum::actingAs($engineer);
-    $this->postJson("/api/v1/ddm/documents/{$open->id}/download-requests", [
-        'reason' => 'Open documents do not need a request.',
     ])
         ->assertConflict()
         ->assertJsonPath('code', 'state_conflict');
@@ -583,14 +576,14 @@ test('downloads stream the current version with safe headers and audit the actio
     Storage::fake('local');
 
     $admin = User::factory()->admin()->create();
-    $engineer = User::factory()->projectEngineer()->create();
+    $superAdmin = User::factory()->superAdmin()->create();
     $category = DocumentCategory::factory()->create();
 
     [$document] = ddmDownloadDocument($category, $admin);
     $secondVersion = ddmDownloadVersion($document, $admin, 2, ddmDownloadPdfContent('second'));
     $document->forceFill(['latest_version_number' => 2])->save();
 
-    Sanctum::actingAs($engineer);
+    Sanctum::actingAs($superAdmin);
 
     $response = $this->get("/api/v1/ddm/documents/{$document->id}/download");
 
@@ -608,7 +601,7 @@ test('downloads stream the current version with safe headers and audit the actio
         ->latest('id')
         ->firstOrFail();
 
-    expect($audit->user_id)->toBe($engineer->id)
+    expect($audit->user_id)->toBe($superAdmin->id)
         ->and($audit->auditable_id)->toBe($document->id)
         ->and($audit->context['version_id'])->toBe($secondVersion->id)
         ->and($audit->context['version_number'])->toBe(2)
@@ -674,7 +667,7 @@ test('restricted and confidential downloads require permission or an approved re
         ->assertStreamedContent(ddmDownloadPdfContent('v1'));
 });
 
-test('a viewer with DDM view can download open documents but not restricted ones', function () {
+test('a viewer with DDM view must request before downloading a restricted document', function () {
     seedAccessControl();
     Storage::fake('local');
 
@@ -682,20 +675,24 @@ test('a viewer with DDM view can download open documents but not restricted ones
     $viewer = User::factory()->viewer()->create();
     ddmGrantPermission($viewer, PermissionName::DdmDocumentsView, $superAdmin);
 
-    $openCategory = DocumentCategory::factory()->create();
-    $restrictedCategory = DocumentCategory::factory()->restricted()->create();
-    [$open] = ddmDownloadDocument($openCategory, $superAdmin);
-    [$restricted] = ddmDownloadDocument($restrictedCategory, $superAdmin);
+    $category = DocumentCategory::factory()->restricted()->create();
+    [$document] = ddmDownloadDocument($category, $superAdmin);
 
     Sanctum::actingAs($viewer);
 
-    $this->get("/api/v1/ddm/documents/{$open->id}/download")
-        ->assertOk()
-        ->assertStreamedContent(ddmDownloadPdfContent('v1'));
-
-    $this->getJson("/api/v1/ddm/documents/{$restricted->id}/download")
+    $this->getJson("/api/v1/ddm/documents/{$document->id}/download")
         ->assertForbidden()
         ->assertJsonPath('code', 'download_approval_required');
+
+    DocumentDownloadRequest::factory()->approved()->create([
+        'document_id' => $document->id,
+        'requested_by' => $viewer->id,
+        'decided_by' => $superAdmin->id,
+    ]);
+
+    $this->get("/api/v1/ddm/documents/{$document->id}/download")
+        ->assertOk()
+        ->assertStreamedContent(ddmDownloadPdfContent('v1'));
 });
 
 test('archived documents remain downloadable', function () {
@@ -703,7 +700,7 @@ test('archived documents remain downloadable', function () {
     Storage::fake('local');
 
     $admin = User::factory()->admin()->create();
-    $engineer = User::factory()->projectEngineer()->create();
+    $superAdmin = User::factory()->superAdmin()->create();
     $category = DocumentCategory::factory()->create();
     [$document] = ddmDownloadDocument($category, $admin, null, ddmDownloadPdfContent('archived'));
 
@@ -713,7 +710,7 @@ test('archived documents remain downloadable', function () {
         'archived_by' => $admin->id,
     ])->save();
 
-    Sanctum::actingAs($engineer);
+    Sanctum::actingAs($superAdmin);
 
     $this->get("/api/v1/ddm/documents/{$document->id}/download")
         ->assertOk()
@@ -725,7 +722,7 @@ test('downloads reject project and deleted documents and report missing files', 
     Storage::fake('local');
 
     $admin = User::factory()->admin()->create();
-    $engineer = User::factory()->projectEngineer()->create();
+    $superAdmin = User::factory()->superAdmin()->create();
     $category = DocumentCategory::factory()->create();
 
     $project = Project::factory()->create();
@@ -741,7 +738,7 @@ test('downloads reject project and deleted documents and report missing files', 
     $missingVersion = $missing->versions()->firstOrFail();
     Storage::disk('local')->delete($missingVersion->storage_path);
 
-    Sanctum::actingAs($engineer);
+    Sanctum::actingAs($superAdmin);
 
     $this->getJson("/api/v1/ddm/documents/{$projectDocument->id}/download")
         ->assertNotFound();

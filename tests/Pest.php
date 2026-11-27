@@ -2,6 +2,7 @@
 
 use App\Enums\RoleName;
 use App\Models\Role;
+use App\Models\User;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RolePermissionSeeder;
 use Database\Seeders\RoleSeeder;
@@ -68,4 +69,15 @@ function seedAccessControl(): void
 function roleNamed(RoleName $role): Role
 {
     return Role::query()->where('name', $role->value)->firstOrFail();
+}
+
+/**
+ * Create a user and assign one of the seeded roles through Spatie.
+ */
+function userWithRole(RoleName $role): User
+{
+    $user = User::factory()->create();
+    $user->assignRole(roleNamed($role));
+
+    return $user;
 }

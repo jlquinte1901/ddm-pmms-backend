@@ -6,7 +6,6 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -37,19 +36,22 @@ class User extends Authenticatable
         ];
     }
 
-    public function role(): BelongsTo
+    /**
+     * The user's single role as a convenience accessor. Role assignment goes
+     * through Spatie's roles() relation.
+     */
+    public function getRoleAttribute(): ?Role
     {
-        return $this->belongsTo(Role::class);
+        return $this->roles->first();
     }
 
     /**
-     * Per-user permission grants. Grants only add access; they never remove
-     * the permissions supplied by the user's role.
+     * Backwards-compatible alias for direct permission grants. Spatie stores
+     * these in model_has_permissions, including the granted_by pivot column.
      */
     public function grantedPermissions(): BelongsToMany
     {
-        return $this->belongsToMany(Permission::class, 'permission_user')
-            ->withPivot('granted_by');
+        return $this->permissions();
     }
 
     public function projectsOwned(): HasMany
