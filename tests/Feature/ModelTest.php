@@ -27,7 +27,8 @@ test('factories create every model with its relationships', function () {
     $permission = Permission::factory()->create();
     $role->permissions()->attach($permission);
 
-    $user = User::factory()->for($role)->create();
+    $user = User::factory()->create();
+    $user->assignRole($role);
     $user->grantedPermissions()->attach($permission, ['granted_by' => $user->id]);
 
     expect($user->role->is($role))->toBeTrue()

@@ -66,6 +66,41 @@ final class AuthService
         });
     }
 
+    /**
+     * Change the password and revoke every other Sanctum token. The token
+     * used for this request stays valid so the current session continues.
+     *
+     * @throws ValidationException
+     */
+    public function changePassword(User $user, string $currentPassword, string $newPassword): void
+    {
+        DB::transaction(function () use ($user, $currentPassword, $newPassword): void {
+            if (! Hash::check($currentPassword, $user->password)) {
+                throw ValidationException::withMessages([
+                    'current_password' => 'The current password is incorrect.',
+                ]);
+            }
+
+            $user->forceFill(['password' => $newPassword])->save();
+
+            $currentTokenId = $user->currentAccessToken()?->getKey();
+            $tokens = $user->tokens();
+
+            if ($currentTokenId !== null) {
+                $tokens->where('id', '!=', $currentTokenId);
+            }
+
+            $tokens->delete();
+
+            $this->audit->record(
+                module: 'shared',
+                action: 'password_changed',
+                auditable: $user,
+                actor: $user,
+            );
+        });
+    }
+
     public function logout(User $user): void
     {
         DB::transaction(function () use ($user): void {

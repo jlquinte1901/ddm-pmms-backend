@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\ChangePasswordRequest;
 use App\Http\Requests\LoginRequest;
 use App\Http\Resources\UserResource;
 use App\Services\AuthorizationService;
@@ -32,6 +33,19 @@ final class AuthController extends Controller
             'expires_at' => $result['token']->accessToken->expires_at?->toIso8601String(),
             'user' => new UserResource($user),
         ]);
+    }
+
+    public function changePassword(
+        ChangePasswordRequest $request,
+        AuthService $auth,
+    ): Response {
+        $auth->changePassword(
+            $request->user(),
+            (string) $request->validated('current_password'),
+            (string) $request->validated('password'),
+        );
+
+        return response()->noContent();
     }
 
     public function logout(Request $request, AuthService $auth): Response

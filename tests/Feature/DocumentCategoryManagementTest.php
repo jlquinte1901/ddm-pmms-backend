@@ -16,12 +16,12 @@ uses(RefreshDatabase::class);
 
 test('DDM category writes are limited to category managers', function (RoleName $role, int $status) {
     seedAccessControl();
-    $user = User::factory()->for(roleNamed($role))->create();
+    $user = userWithRole($role);
     Sanctum::actingAs($user);
 
     $this->postJson('/api/v1/ddm/categories', [
         'name' => 'Category '.$role->value,
-        'default_access_level' => DocumentAccessLevel::Open->value,
+        'default_access_level' => DocumentAccessLevel::Restricted->value,
     ])->assertStatus($status);
 
     if ($status === 201) {
@@ -39,7 +39,7 @@ test('DDM category writes are limited to category managers', function (RoleName 
 
 test('DDM category reads require DDM document view access', function (RoleName $role, int $status) {
     seedAccessControl();
-    $user = User::factory()->for(roleNamed($role))->create();
+    $user = userWithRole($role);
     Sanctum::actingAs($user);
 
     $this->getJson('/api/v1/ddm/categories')->assertStatus($status);
@@ -191,13 +191,13 @@ test('category validation rejects missing, duplicate, and invalid values', funct
 
     $this->postJson('/api/v1/ddm/categories', [
         'name' => 'Existing Category',
-        'default_access_level' => DocumentAccessLevel::Open->value,
+        'default_access_level' => DocumentAccessLevel::Restricted->value,
     ])->assertStatus(422)
         ->assertJsonStructure(['errors' => ['name']]);
 
     $this->postJson('/api/v1/ddm/categories', [
         'name' => 'Shared Name',
-        'default_access_level' => DocumentAccessLevel::Open->value,
+        'default_access_level' => DocumentAccessLevel::Restricted->value,
     ])->assertStatus(422)
         ->assertJsonStructure(['errors' => ['name']]);
 

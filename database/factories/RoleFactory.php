@@ -20,7 +20,7 @@ class RoleFactory extends Factory
     {
         return [
             'name' => fake()->unique()->slug(2),
-            'label' => fake()->words(2, true),
+            'guard_name' => (string) config('auth.defaults.guard', 'web'),
         ];
     }
 
@@ -28,7 +28,6 @@ class RoleFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'name' => $role->value,
-            'label' => $role->label(),
         ]);
     }
 }

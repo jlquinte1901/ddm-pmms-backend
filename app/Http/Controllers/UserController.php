@@ -17,7 +17,7 @@ final class UserController extends Controller
 {
     public function index(IndexUserRequest $request): AnonymousResourceCollection
     {
-        $query = User::query()->with('role');
+        $query = User::query()->with('roles');
 
         if ($request->boolean('trashed')) {
             $query->onlyTrashed();
@@ -33,7 +33,8 @@ final class UserController extends Controller
         }
 
         if ($request->filled('role_id')) {
-            $query->where('role_id', $request->integer('role_id'));
+            $roleId = $request->integer('role_id');
+            $query->whereHas('roles', fn ($builder) => $builder->whereKey($roleId));
         }
 
         if ($request->has('is_active')) {
@@ -49,7 +50,7 @@ final class UserController extends Controller
 
     public function show(User $user, AuthorizationService $authorization): UserResource
     {
-        $user->load('role');
+        $user->load('roles');
         $user->setRelation('effectivePermissions', $authorization->permissionsFor($user));
 
         return new UserResource($user);
@@ -61,7 +62,7 @@ final class UserController extends Controller
         AuthorizationService $authorization,
     ): UserResource {
         $user = $users->create($request->validated(), $request->user());
-        $user->load('role');
+        $user->load('roles');
         $user->setRelation('effectivePermissions', $authorization->permissionsFor($user));
 
         return new UserResource($user);
@@ -74,7 +75,7 @@ final class UserController extends Controller
         AuthorizationService $authorization,
     ): UserResource {
         $user = $users->update($user, $request->validated(), $request->user());
-        $user->load('role');
+        $user->load('roles');
         $user->setRelation('effectivePermissions', $authorization->permissionsFor($user));
 
         return new UserResource($user);
@@ -94,7 +95,7 @@ final class UserController extends Controller
         AuthorizationService $authorization,
     ): UserResource {
         $user = $users->restore($user, $request->user());
-        $user->load('role');
+        $user->load('roles');
         $user->setRelation('effectivePermissions', $authorization->permissionsFor($user));
 
         return new UserResource($user);
@@ -107,7 +108,7 @@ final class UserController extends Controller
         AuthorizationService $authorization,
     ): UserResource {
         $user = $users->activate($user, $request->user());
-        $user->load('role');
+        $user->load('roles');
         $user->setRelation('effectivePermissions', $authorization->permissionsFor($user));
 
         return new UserResource($user);
@@ -120,7 +121,7 @@ final class UserController extends Controller
         AuthorizationService $authorization,
     ): UserResource {
         $user = $users->deactivate($user, $request->user());
-        $user->load('role');
+        $user->load('roles');
         $user->setRelation('effectivePermissions', $authorization->permissionsFor($user));
 
         return new UserResource($user);

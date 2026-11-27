@@ -75,7 +75,7 @@ test('user creation validates the confirmed password and role rules', function (
 
 test('only the super admin can use shared user administration', function (RoleName $role, int $status) {
     seedAccessControl();
-    $user = User::factory()->for(roleNamed($role))->create();
+    $user = userWithRole($role);
     Sanctum::actingAs($user);
 
     $this->getJson('/api/v1/users')->assertStatus($status);
@@ -223,8 +223,9 @@ test('per-user grants add permissions and are audited', function () {
     ])->assertOk()
         ->assertJsonFragment(['name' => PermissionName::DdmDocumentsView->value]);
 
-    $this->assertDatabaseHas('permission_user', [
-        'user_id' => $viewer->id,
+    $this->assertDatabaseHas('model_has_permissions', [
+        'model_type' => User::class,
+        'model_id' => $viewer->id,
         'permission_id' => $permission->id,
         'granted_by' => $admin->id,
     ]);
@@ -245,8 +246,9 @@ test('per-user grants add permissions and are audited', function () {
         ->assertOk()
         ->assertJsonPath('data.permissions', []);
 
-    $this->assertDatabaseMissing('permission_user', [
-        'user_id' => $viewer->id,
+    $this->assertDatabaseMissing('model_has_permissions', [
+        'model_type' => User::class,
+        'model_id' => $viewer->id,
         'permission_id' => $permission->id,
     ]);
 });
@@ -255,7 +257,8 @@ test('user lists are filtered and paginated on the server', function () {
     seedAccessControl();
     $admin = User::factory()->superAdmin()->create();
     $engineerRole = roleNamed(RoleName::ProjectEngineer);
-    $alice = User::factory()->for($engineerRole)->create(['full_name' => 'Alice Engineer']);
+    $alice = User::factory()->create(['full_name' => 'Alice Engineer']);
+    $alice->assignRole($engineerRole);
     User::factory()->viewer()->create(['full_name' => 'Bob Viewer']);
     $deleted = User::factory()->viewer()->create(['full_name' => 'Deleted User']);
     $deleted->delete();

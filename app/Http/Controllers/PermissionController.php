@@ -22,7 +22,6 @@ final class PermissionController extends Controller
 
         return PermissionResource::collection(
             Permission::query()
-                ->orderBy('module')
                 ->orderBy('name')
                 ->paginate($perPage)
                 ->withQueryString(),

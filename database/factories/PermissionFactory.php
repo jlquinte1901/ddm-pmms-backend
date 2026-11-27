@@ -19,7 +19,7 @@ class PermissionFactory extends Factory
     {
         return [
             'name' => fake()->unique()->lexify('module.resource.????????'),
-            'module' => fake()->randomElement(['shared', 'ddm', 'pmms']),
+            'guard_name' => (string) config('auth.defaults.guard', 'web'),
         ];
     }
 }

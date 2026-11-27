@@ -73,6 +73,8 @@ Route::prefix('v1')->group(function (): void {
 
     Route::middleware(['auth:sanctum', 'active'])->group(function (): void {
         Route::post('auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
+        Route::post('auth/change-password', [AuthController::class, 'changePassword'])
+            ->name('auth.change-password');
         Route::get('auth/me', [AuthController::class, 'me'])->name('auth.me');
 
         Route::prefix('ddm')->group(function (): void {
@@ -196,6 +198,10 @@ Route::prefix('v1')->group(function (): void {
             });
 
             Route::middleware('permission:'.PermissionName::PmmsProjectsAdminister->value)->group(function (): void {
+                Route::get('assignable-engineers', [ProjectAdministerController::class, 'assignableEngineers'])
+                    ->name('pmms.projects.assignable-engineers');
+                Route::post('projects/{pmmsProject}/correct-planned-dates', [ProjectAdministerController::class, 'correctPlannedDates'])
+                    ->name('pmms.projects.correct-planned-dates');
                 Route::post('projects/{pmmsProject}/terminate', [ProjectAdministerController::class, 'terminate'])
                     ->name('pmms.projects.terminate');
                 Route::post('projects/{pmmsProject}/reopen', [ProjectAdministerController::class, 'reopen'])

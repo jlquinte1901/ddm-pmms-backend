@@ -84,7 +84,7 @@ test('a project engineer creates a project for himself and client ownership fiel
 test('only project engineers can create projects', function (RoleName $role, int $status) {
     seedAccessControl();
 
-    $user = User::factory()->for(roleNamed($role))->create();
+    $user = userWithRole($role);
     $category = ProjectCategory::factory()->create();
 
     Sanctum::actingAs($user);
@@ -157,7 +157,7 @@ test('project categories are managed by admins and audited', function () {
 test('only users with category permission manage project categories', function (RoleName $role, int $status) {
     seedAccessControl();
 
-    $user = User::factory()->for(roleNamed($role))->create();
+    $user = userWithRole($role);
     Sanctum::actingAs($user);
 
     $this->postJson('/api/v1/pmms/categories', ['name' => 'Category '.$role->value])
@@ -195,7 +195,7 @@ test('a project engineer can only list and view his own projects', function () {
 test('admins and super admins view all projects but cannot edit project data', function (RoleName $role) {
     seedAccessControl();
 
-    $user = User::factory()->for(roleNamed($role))->create();
+    $user = userWithRole($role);
     $project = Project::factory()->create();
 
     Sanctum::actingAs($user);
@@ -535,7 +535,7 @@ test('administer actions terminate reopen reassign delete and restore projects',
 test('project engineers and viewers cannot perform administer actions', function (RoleName $role) {
     seedAccessControl();
 
-    $user = User::factory()->for(roleNamed($role))->create();
+    $user = userWithRole($role);
     $project = Project::factory()->create();
 
     Sanctum::actingAs($user);

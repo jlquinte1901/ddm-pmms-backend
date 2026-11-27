@@ -96,6 +96,48 @@ final class ProjectService
         });
     }
 
+    /**
+     * Administer action: correct planned dates after a project has started.
+     * The normal update path locks planned dates once started; this path
+     * requires a reason and always writes history and audit rows.
+     */
+    public function correctPlannedDates(
+        Project $project,
+        string $plannedStartDate,
+        string $plannedFinishDate,
+        string $reason,
+        User $actor,
+    ): Project {
+        return DB::transaction(function () use ($project, $plannedStartDate, $plannedFinishDate, $reason, $actor): Project {
+            $project = $this->lock($project);
+            $old = $this->snapshot->forProject($project);
+
+            $project->forceFill([
+                'planned_start_date' => $plannedStartDate,
+                'planned_finish_date' => $plannedFinishDate,
+            ])->save();
+
+            $changes = $this->snapshot->changes($old, $this->snapshot->forProject($project));
+
+            if ($changes === []) {
+                return $this->loadProject($project);
+            }
+
+            $this->history->record($project, $actor, 'planned_dates_corrected', $changes, $reason);
+            $this->audit->record(
+                module: 'pmms',
+                action: 'project_planned_dates_corrected',
+                auditable: $project,
+                oldValues: $this->changedValues($changes, 0),
+                newValues: $this->changedValues($changes, 1),
+                context: ['reason' => $reason],
+                actor: $actor,
+            );
+
+            return $this->loadProject($project);
+        });
+    }
+
     public function start(Project $project, ?string $remarks, User $actor): Project
     {
         return DB::transaction(function () use ($project, $remarks, $actor): Project {
@@ -392,7 +434,7 @@ final class ProjectService
                 ->whereKey($newProjectEngineerId)
                 ->where('is_active', true)
                 ->whereNull('deleted_at')
-                ->whereHas('role', fn ($query) => $query->where('name', RoleName::ProjectEngineer->value))
+                ->whereHas('roles', fn ($query) => $query->where('name', RoleName::ProjectEngineer->value))
                 ->first();
 
             if ($newOwner === null) {

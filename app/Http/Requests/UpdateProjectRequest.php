@@ -34,7 +34,6 @@ final class UpdateProjectRequest extends FormRequest
                 'nullable',
                 'string',
                 'max:100',
-                Rule::unique('projects', 'contract_number')->ignore($this->route('pmmsProject')),
             ],
             'location' => ['sometimes', 'required', 'string', 'max:255'],
             'region' => ['sometimes', 'nullable', 'string', 'max:100'],

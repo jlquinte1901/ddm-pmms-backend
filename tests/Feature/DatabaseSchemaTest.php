@@ -1,19 +1,20 @@
 <?php
 
+use App\Models\Role;
 use App\Models\User;
-use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
-test('the fifteen confirmed tables exist', function () {
+test('the confirmed tables exist', function () {
     $tables = [
         'roles',
         'permissions',
-        'permission_role',
-        'permission_user',
+        'model_has_roles',
+        'model_has_permissions',
+        'role_has_permissions',
         'users',
         'audit_logs',
         'personal_access_tokens',
@@ -34,7 +35,6 @@ test('the fifteen confirmed tables exist', function () {
 
 test('users carries the columns from the confirmed schema', function () {
     expect(Schema::hasColumns('users', [
-        'role_id',
         'full_name',
         'section',
         'is_active',
@@ -44,18 +44,8 @@ test('users carries the columns from the confirmed schema', function () {
 });
 
 test('users can be soft deleted and restored', function () {
-    $roleId = DB::table('roles')->insertGetId([
-        'name' => 'project_engineer',
-        'label' => 'Project Engineer',
-    ]);
-    $userId = DB::table('users')->insertGetId([
-        'role_id' => $roleId,
-        'full_name' => 'Juan dela Cruz',
-        'email' => 'pe@example.com',
-        'password' => 'secret-password',
-    ]);
-
-    $user = User::findOrFail($userId);
+    $user = User::factory()->create();
+    $userId = $user->id;
     $user->delete();
 
     expect(User::find($userId))->toBeNull()
@@ -85,16 +75,7 @@ test('append-only tables keep created_at and expose no updated_at or deleted_at 
 });
 
 test('effective_finish_date stores the date that decides the deadline', function (?string $revisedFinishDate, string $expected) {
-    $roleId = DB::table('roles')->insertGetId([
-        'name' => 'project_engineer',
-        'label' => 'Project Engineer',
-    ]);
-    $userId = DB::table('users')->insertGetId([
-        'role_id' => $roleId,
-        'full_name' => 'Juan dela Cruz',
-        'email' => 'pe@example.com',
-        'password' => 'secret-password',
-    ]);
+    $userId = User::factory()->create()->id;
     $categoryId = DB::table('project_categories')->insertGetId([
         'name' => 'Construction',
     ]);
@@ -122,19 +103,19 @@ test('effective_finish_date stores the date that decides the deadline', function
     'revised finish date missing' => [null, '2026-12-20'],
 ]);
 
-test('users rejects a row without a role', function () {
-    expect(fn () => DB::table('users')->insert([
-        'full_name' => 'No Role',
-        'email' => 'no-role@example.com',
-        'password' => 'secret-password',
-    ]))->toThrow(QueryException::class);
-});
+test('roles are assigned through model_has_roles instead of a users role_id column', function () {
+    expect(Schema::hasColumn('users', 'role_id'))->toBeFalse();
 
-test('users rejects a role that does not exist', function () {
-    expect(fn () => DB::table('users')->insert([
-        'role_id' => 9999,
-        'full_name' => 'Unknown Role',
-        'email' => 'unknown-role@example.com',
-        'password' => 'secret-password',
-    ]))->toThrow(QueryException::class);
+    $role = Role::query()->create([
+        'name' => 'project_engineer',
+        'guard_name' => 'web',
+    ]);
+    $user = User::factory()->create();
+    $user->assignRole($role);
+
+    $this->assertDatabaseHas('model_has_roles', [
+        'role_id' => $role->id,
+        'model_type' => User::class,
+        'model_id' => $user->id,
+    ]);
 });
